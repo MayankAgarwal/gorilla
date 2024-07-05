@@ -16,6 +16,7 @@ from model_handler.llama_handler import LlamaHandler
 from model_handler.mistral_handler import MistralHandler
 from model_handler.nexus_handler import NexusHandler
 from model_handler.oss_handler import OSSHandler
+from model_handler.granite_handler import GraniteHandler
 
 handler_map = {
     "gorilla-openfunctions-v0": GorillaHandler,
@@ -74,4 +75,6 @@ handler_map = {
     "command-r-plus-FC-optimized": CohereHandler,
     "command-r-plus-optimized": CohereHandler,
     "snowflake/arctic": ArcticHandler,
+    "ibm-granite/granite-20b-function-calling": GraniteHandler,
+    "ibm-granite/granite-3b-code-base": GraniteHandler,
 }
