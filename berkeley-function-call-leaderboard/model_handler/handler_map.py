@@ -17,6 +17,7 @@ from model_handler.mistral_handler import MistralHandler
 from model_handler.nexus_handler import NexusHandler
 from model_handler.oss_handler import OSSHandler
 from model_handler.granite_handler import GraniteHandler
+from model_handler.nvidia_handler import NvidiaHandler
 
 handler_map = {
     "gorilla-openfunctions-v0": GorillaHandler,
@@ -77,4 +78,5 @@ handler_map = {
     "snowflake/arctic": ArcticHandler,
     "ibm-granite/granite-20b-function-calling": GraniteHandler,
     "ibm-granite/granite-3b-code-base": GraniteHandler,
+    "nvidia/nemotron-4-340b-instruct": NvidiaHandler,
 }
