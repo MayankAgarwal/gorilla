@@ -76,7 +76,6 @@ handler_map = {
     "command-r-plus-FC-optimized": CohereHandler,
     "command-r-plus-optimized": CohereHandler,
     "snowflake/arctic": ArcticHandler,
-    "ibm-granite/granite-20b-function-calling": GraniteHandler,
-    "ibm-granite/granite-3b-code-base": GraniteHandler,
+    "ibm-granite/granite-20b-functioncalling": GraniteHandler,
     "nvidia/nemotron-4-340b-instruct": NvidiaHandler,
 }

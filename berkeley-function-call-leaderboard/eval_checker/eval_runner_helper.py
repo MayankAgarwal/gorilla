@@ -373,11 +373,11 @@ MODEL_METADATA_MAPPING = {
         "NVIDIA",
         "nvidia-open-model-license",
     ],
-    "ibm-granite/granite-20b-function-calling": [
+    "ibm-granite/granite-20b-functioncalling": [
         "Granite-20b-FunctionCalling (FC)",
-        "https://huggingface.co/ibm-granite/granite-20b-function-calling",
+        "https://huggingface.co/ibm-granite/granite-20b-functioncalling",
         "IBM Research",
-        "apache-2.0",
+        "Apache-2.0",
     ],
 }
 
@@ -485,7 +485,7 @@ NO_COST_MODELS = [
     "meetkai/functionary-small-v2.4-FC",
     "snowflake/arctic",
     "nvidia/nemotron-4-340b-instruct",
-    "ibm-granite/granite-20b-function-calling",
+    "ibm-granite/granite-20b-functioncalling",
 ]
 
 # Price got from AZure, 22.032 per hour for 8 V100, Pay As You Go Total Price
