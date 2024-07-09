@@ -379,6 +379,12 @@ MODEL_METADATA_MAPPING = {
         "IBM Research",
         "Apache-2.0",
     ],
+    "THUDM/glm-4-9b-chat": [
+        "GLM-4-9b-Chat (FC)",
+        "https://huggingface.co/THUDM/glm-4-9b-chat",
+        "THUDM",
+        "glm-4",
+    ],
 }
 
 INPUT_PRICE_PER_MILLION_TOKEN = {
@@ -473,6 +479,7 @@ OSS_LATENCY = {
     "meta-llama/Meta-Llama-3-8B-Instruct": 73,
     "meta-llama/Meta-Llama-3-70B-Instruct": 307,
     "gorilla-openfunctions-v2": 83,
+    "THUDM/glm-4-9b-chat": 223,
 }
 
 
@@ -486,6 +493,7 @@ NO_COST_MODELS = [
     "snowflake/arctic",
     "nvidia/nemotron-4-340b-instruct",
     "ibm-granite/granite-20b-functioncalling",
+    "THUDM/glm-4-9b-chat",
 ]
 
 # Price got from AZure, 22.032 per hour for 8 V100, Pay As You Go Total Price
@@ -637,9 +645,10 @@ def api_status_sanity_check_rest():
             errors.append((data, status))
 
     if correct_count != len(ground_truth_replaced):
-        [print("Data:", data, "\nError:", status["error"]) for data, status in errors]
-        error_msg = f"API Status Test Failed for REST Section. {len(ground_truth_replaced) - correct_count} out of {len(ground_truth_replaced)} API behaviors are not as expected. Be careful with executable test category results; they may be inaccurate."
-        raise BadAPIStatusError(error_msg)
+        raise BadAPIStatusError(
+            errors,
+            f"{len(ground_truth_replaced) - correct_count} / {len(ground_truth_replaced)}",
+        )
 
 
 def api_status_sanity_check_executable():
@@ -663,9 +672,43 @@ def api_status_sanity_check_executable():
             errors.append((data, status))
 
     if correct_count != len(ground_truth):
-        [print("Data:", data, "\nError:", status["error"]) for data, status in errors]
-        error_msg = f"API Status Test Failed for Executable Section. {len(ground_truth) - correct_count} out of {len(ground_truth)} API behaviors are not as expected. Be careful with executable test category results; they may be inaccurate."
-        raise BadAPIStatusError(error_msg)
+        raise BadAPIStatusError(
+            errors, f"{len(ground_truth) - correct_count} / {len(ground_truth)}"
+        )
+
+
+def display_api_status_error(rest_error, executable_error, display_success=False):
+    if not rest_error and not executable_error:
+        if display_success:
+            print("🟢 All API Status Test Passed!")
+        return None
+
+    RED_FONT = "\033[91m"
+    RESET = "\033[0m"
+
+    print(
+        f"\n{RED_FONT}{'-' * 18} Executable Categories' Error Bounds Based on API Health Status {'-' * 18}{RESET}\n"
+    )
+
+    if rest_error:
+        print(
+            f"❗️ Warning: Unable to verify health of executable APIs used in executable test category (REST). Please contact API provider.\n"
+        )
+        print(f"{rest_error.error_rate} APIs affected:\n")
+        for data, status in rest_error.errors:
+            print(f"  - Test Case: {data['ground_truth']}")
+            print(f"    Error Type: {status['error_type']}\n")
+
+    if executable_error:
+        print(
+            f"❗️ Warning: Unable to verify health of executable APIs used in executable test categories (Non-REST). Please contact API provider.\n"
+        )
+        print(f"{executable_error.error_rate} APIs affected:\n")
+        for data, status in executable_error.errors:
+            print(f"  - Test Case: {data['ground_truth'][0]}")
+            print(f"    Error Type: {status['error_type']}\n")
+
+    print(f"{RED_FONT}{'-' * 100}\n{RESET}")
 
 
 def get_executable_expected_output(prompt_file_path):
