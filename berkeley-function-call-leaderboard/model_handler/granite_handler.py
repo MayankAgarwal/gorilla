@@ -104,6 +104,10 @@ class GraniteHandler(OSSHandler):
                     decoded_outputs.append("No function is called")
                     continue
 
-                decoded_outputs.append({fnname: args})
+                # decoded_outputs.append({fnname: args})
+                args_str = ",".join(
+                    [f"{argname}={repr(argval)}" for argname, argval in args.items()]
+                )
+                decoded_outputs.append(f"{fnname}({args_str})")
 
         return decoded_outputs
