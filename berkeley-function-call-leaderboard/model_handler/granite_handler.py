@@ -23,7 +23,7 @@ class GraniteHandler(OSSHandler):
             "USER: {query}\nASSISTANT: "
         )
 
-        functions = language_specific_pre_processing(functions, test_category, False)
+        functions = language_specific_pre_processing(function, test_category, False)
         functions = convert_to_tool(
             functions,
             GORILLA_TO_OPENAPI,
@@ -34,10 +34,19 @@ class GraniteHandler(OSSHandler):
 
         functions_str = "\n".join([json.dumps(func) for func in function])
 
-        prompt = prompt_str.format(functions_str=functions_str, query=prompt)
+        prompt = prompt_str.replace("{functions_str}", functions_str).replace(
+            "{query}", prompt
+        )
         return prompt
 
-    def __decode_output__(self, result, language="Python"):
+    def inference(
+        self, question_file, test_category, num_gpus, format_prompt_func=_format_prompt
+    ):
+        return super().inference(
+            question_file, test_category, num_gpus, format_prompt_func
+        )
+
+    def decode_ast(self, result, language="Python"):
         decoded_outputs = []
         result = [
             call.strip()
@@ -61,12 +70,31 @@ class GraniteHandler(OSSHandler):
                 if language != "Python":
                     args = {k: str(v) for k, v in args.items()}
 
-                decoded_outputs.appedn({fnname: args})
+                decoded_outputs.append({fnname: args})
 
         return decoded_outputs
 
-    def decode_ast(self, result, language="Python"):
-        return self.__decode_output__(result, language=language)
-
     def decode_execute(self, result):
-        return self.__decode_output__(result)
+        decoded_outputs = []
+        result = [
+            call.strip()
+            for call in result.split("<function_call>")
+            if len(call.strip()) > 0
+        ]
+
+        for res in result:
+            try:
+                res = json.loads(res.strip())
+            except:
+                decoded_outputs.append(res)
+            else:
+                fnname = res.get("name", "").strip()
+                args = res.get("arguments", {})
+
+                if fnname == "no_function":
+                    decoded_outputs.append("No function is called")
+                    continue
+
+                decoded_outputs.append({fnname: args})
+
+        return decoded_outputs
