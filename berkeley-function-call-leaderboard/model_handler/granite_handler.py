@@ -6,6 +6,7 @@ from model_handler.constant import GORILLA_TO_OPENAPI
 from model_handler.utils import (
     language_specific_pre_processing,
     convert_to_tool,
+    augment_prompt_by_languge,
 )
 
 
@@ -23,6 +24,13 @@ class GraniteHandler(OSSHandler):
             'If none of the functions are relevant or the given question lacks the parameters required by the function, please output "<function_call> {"name": "no_function", "arguments": {}}".\n\n'
             "USER: {query}\nASSISTANT: "
         )
+
+        # Remove the language specific prompt augmentation string, such as "Note that the provided function is in Python"
+        language_specific_prompt_augmented_str = augment_prompt_by_languge(
+            "", test_category
+        )
+        if language_specific_prompt_augmented_str.strip():
+            prompt = prompt.replace(language_specific_prompt_augmented_str, "")
 
         functions = language_specific_pre_processing(function, test_category, False)
         functions = convert_to_tool(
