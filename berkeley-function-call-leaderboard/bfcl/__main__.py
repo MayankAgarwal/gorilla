@@ -91,6 +91,11 @@ def generate(
         help="A list of model names to evaluate. Use commas to separate multiple models.",
         callback=handle_multiple_input
     ),
+    model_id: str = typer.Option(
+        None,
+        "--model_id",
+        help="LORA Model ID"
+    )
     test_category: List[str] = typer.Option(
         ["all"], 
         help="A list of test categories to run the evaluation on. Use commas to separate multiple test categories.",
