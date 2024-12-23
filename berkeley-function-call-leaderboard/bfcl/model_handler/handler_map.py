@@ -31,6 +31,8 @@ from bfcl.model_handler.proprietary_model.writer import WriterHandler
 from bfcl.model_handler.proprietary_model.yi import YiHandler
 from bfcl.model_handler.proprietary_model.local_lora import LocalLORA
 
+from bfcl.constant import LOCAL_LORA_MODEL_NAME
+
 # TODO: Add meta-llama/Llama-3.1-405B-Instruct
 
 # Inference through API calls
@@ -91,7 +93,7 @@ api_inference_handler_map = {
     # "yi-large-fc": YiHandler,  #  Their API is under maintenance, and will not be back online in the near future
     "palmyra-x-004": WriterHandler,
     "grok-beta": GrokHandler,
-    "local_lora": LocalLORA,
+    LOCAL_LORA_MODEL_NAME: LocalLORA,
 }
 
 # Inference through local hosting
