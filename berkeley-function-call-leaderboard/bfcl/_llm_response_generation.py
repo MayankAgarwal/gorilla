@@ -15,6 +15,7 @@ from bfcl.constant import (
     TEST_COLLECTION_MAPPING,
     TEST_FILE_MAPPING,
     TEST_IDS_TO_GENERATE_PATH,
+    LOCAL_LORA_MODEL_NAME,
 )
 from bfcl.eval_checker.eval_runner_helper import load_file
 from bfcl.model_handler.handler_map import HANDLER_MAP
@@ -34,7 +35,12 @@ RETRY_DELAY = 65  # Delay in seconds
 def get_args():
     parser = argparse.ArgumentParser()
     # Refer to model_choice for supported models.
-    parser.add_argument("--model", type=str, default="gorilla-openfunctions-v2", nargs="+")
+    parser.add_argument(
+        "--model", type=str, default="gorilla-openfunctions-v2", nargs="+"
+    )
+    parser.add_argument(
+        "--model_id", type=str, default=None, help="Model ID for local LORA deployment"
+    )
     # Refer to test_categories for supported categories.
     parser.add_argument("--test-category", type=str, default="all", nargs="+")
 
@@ -44,7 +50,9 @@ def get_args():
     parser.add_argument("--exclude-state-log", action="store_true", default=False)
     parser.add_argument("--num-threads", default=1, type=int)
     parser.add_argument("--num-gpus", default=1, type=int)
-    parser.add_argument("--backend", default="vllm", type=str, choices=["vllm", "sglang"])
+    parser.add_argument(
+        "--backend", default="vllm", type=str, choices=["vllm", "sglang"]
+    )
     parser.add_argument("--gpu-memory-utilization", default=0.9, type=float)
     parser.add_argument("--result-dir", default=None, type=str)
     parser.add_argument("--run-ids", action="store_true", default=False)
@@ -53,8 +61,11 @@ def get_args():
     return args
 
 
-def build_handler(model_name, temperature):
-    handler = HANDLER_MAP[model_name](model_name, temperature)
+def build_handler(model_name, temperature, model_id=None):
+    if model_name == LOCAL_LORA_MODEL_NAME:
+        handler = HANDLER_MAP[model_name](model_id, temperature)
+    else:
+        handler = HANDLER_MAP[model_name](model_name, temperature)
     return handler
 
 
@@ -84,21 +95,33 @@ def get_involved_test_entries(test_category_args, run_ids):
                 continue
             test_file_path = TEST_FILE_MAPPING[category]
             all_test_entries_involved.extend(
-                [entry for entry in load_file(PROMPT_PATH / test_file_path) if entry["id"] in test_ids]
+                [
+                    entry
+                    for entry in load_file(PROMPT_PATH / test_file_path)
+                    if entry["id"] in test_ids
+                ]
             )
             all_test_categories.append(category)
             all_test_file_paths.append(test_file_path)
 
     else:
-        all_test_categories, all_test_file_paths = parse_test_category_argument(test_category_args)
-        for test_category, file_to_open in zip(all_test_categories, all_test_file_paths):
+        all_test_categories, all_test_file_paths = parse_test_category_argument(
+            test_category_args
+        )
+        for test_category, file_to_open in zip(
+            all_test_categories, all_test_file_paths
+        ):
             all_test_entries_involved.extend(load_file(PROMPT_PATH / file_to_open))
 
     return all_test_file_paths, all_test_categories, all_test_entries_involved
 
 
 def collect_test_cases(
-    args, model_name, all_test_categories, all_test_file_paths, all_test_entries_involved
+    args,
+    model_name,
+    all_test_categories,
+    all_test_file_paths,
+    all_test_entries_involved,
 ):
     model_name_dir = model_name.replace("/", "_")
     model_result_dir = args.result_dir / model_name_dir
@@ -106,7 +129,9 @@ def collect_test_cases(
     existing_result = []
     for test_category, file_to_open in zip(all_test_categories, all_test_file_paths):
 
-        result_file_path = model_result_dir / file_to_open.replace(".json", "_result.json")
+        result_file_path = model_result_dir / file_to_open.replace(
+            ".json", "_result.json"
+        )
         if result_file_path.exists():
             # Not allowing overwrite, we will load the existing results
             if not args.allow_overwrite:
@@ -142,7 +167,8 @@ def process_multi_turn_test_case(test_cases):
         for func_collection in involved_classes:
             # func_doc is a list of dict
             func_doc = load_file(
-                MULTI_TURN_FUNC_DOC_PATH / MULTI_TURN_FUNC_DOC_FILE_MAPPING[func_collection]
+                MULTI_TURN_FUNC_DOC_PATH
+                / MULTI_TURN_FUNC_DOC_FILE_MAPPING[func_collection]
             )
             entry["function"].extend(func_doc)
 
@@ -215,7 +241,7 @@ def multi_threaded_inference(handler, test_case, include_input_log, exclude_stat
 
 def generate_results(args, model_name, test_cases_total):
     update_mode = args.allow_overwrite
-    handler = build_handler(model_name, args.temperature)
+    handler = build_handler(model_name, args.temperature, args.model_id)
 
     if handler.model_style == ModelStyle.OSSMODEL:
         # batch_inference will handle the writing of results

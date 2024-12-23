@@ -13,6 +13,8 @@ TEST_IDS_TO_GENERATE_PATH = "../test_case_ids_to_generate.json"
 
 VERSION_PREFIX = "BFCL_v3"
 
+LOCAL_LORA_MODEL_NAME = "Local_Lora"
+
 # These are in the PROMPT_PATH
 TEST_FILE_MAPPING = {
     "exec_simple": f"{VERSION_PREFIX}_exec_simple.json",
