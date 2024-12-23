@@ -87,19 +87,15 @@ def models():
 @cli.command()
 def generate(
     model: List[str] = typer.Option(
-        ["gorilla-openfunctions-v2"], 
+        ["gorilla-openfunctions-v2"],
         help="A list of model names to evaluate. Use commas to separate multiple models.",
-        callback=handle_multiple_input
+        callback=handle_multiple_input,
     ),
-    model_id: str = typer.Option(
-        None,
-        "--model_id",
-        help="LORA Model ID"
-    )
+    model_id: str = typer.Option(None, "--model_id", help="LORA Model ID"),
     test_category: List[str] = typer.Option(
-        ["all"], 
+        ["all"],
         help="A list of test categories to run the evaluation on. Use commas to separate multiple test categories.",
-        callback=handle_multiple_input
+        callback=handle_multiple_input,
     ),
     temperature: float = typer.Option(
         0.001, help="The temperature parameter for the model."
@@ -116,7 +112,9 @@ def generate(
     ),
     num_gpus: int = typer.Option(1, help="The number of GPUs to use."),
     num_threads: int = typer.Option(1, help="The number of threads to use."),
-    gpu_memory_utilization: float = typer.Option(0.9, help="The GPU memory utilization."),
+    gpu_memory_utilization: float = typer.Option(
+        0.9, help="The GPU memory utilization."
+    ),
     backend: str = typer.Option("vllm", help="The backend to use for the model."),
     result_dir: str = typer.Option(
         RESULT_PATH,
@@ -141,6 +139,7 @@ def generate(
 
     args = SimpleNamespace(
         model=model,
+        model_id=model_id,
         test_category=test_category,
         temperature=temperature,
         include_input_log=include_input_log,
@@ -153,7 +152,9 @@ def generate(
         allow_overwrite=allow_overwrite,
         run_ids=run_ids,
     )
-    load_dotenv(dotenv_path=DOTENV_PATH, verbose=True, override=True)  # Load the .env file
+    load_dotenv(
+        dotenv_path=DOTENV_PATH, verbose=True, override=True
+    )  # Load the .env file
     generation_main(args)
 
 
@@ -200,7 +201,9 @@ def results(
         results_data.append(
             (
                 display_name(dir.name),
-                datetime.fromtimestamp(dir.stat().st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
+                datetime.fromtimestamp(dir.stat().st_ctime).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
             )
         )
 
@@ -216,14 +219,12 @@ def results(
 @cli.command()
 def evaluate(
     model: List[str] = typer.Option(
-        None, 
-        help="A list of model names to evaluate.",
-        callback=handle_multiple_input
+        None, help="A list of model names to evaluate.", callback=handle_multiple_input
     ),
     test_category: List[str] = typer.Option(
-        None, 
+        None,
         help="A list of test categories to run the evaluation on.",
-        callback=handle_multiple_input
+        callback=handle_multiple_input,
     ),
     api_sanity_check: bool = typer.Option(
         False,
@@ -246,7 +247,9 @@ def evaluate(
     Evaluate results from run of one or more models on a test-category (same as eval_runner.py).
     """
 
-    load_dotenv(dotenv_path=DOTENV_PATH, verbose=True, override=True)  # Load the .env file
+    load_dotenv(
+        dotenv_path=DOTENV_PATH, verbose=True, override=True
+    )  # Load the .env file
     evaluation_main(model, test_category, api_sanity_check, result_dir, score_dir)
 
 
