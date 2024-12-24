@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 
@@ -36,6 +37,9 @@ class LocalLORA(OpenAIHandler):
         assert base_url is not None, "'BFCL_LORA_URL' not set"
 
         self.client = OpenAI(base_url=base_url)
+        self._output_re = re.compile(
+            r"<tool_call>(.*)</tool_call>", re.IGNORECASE | re.DOTALL
+        )
 
     #### FC methods ####
 
@@ -68,18 +72,19 @@ class LocalLORA(OpenAIHandler):
         return super()._compile_tools(inference_data, test_entry)
 
     def _parse_query_response_FC(self, api_response: any) -> dict:
+
+        model_responses: str = api_response.choices[0].message.content
+
         try:
-            model_responses = [
-                {func_call.function.name: func_call.function.arguments}
-                for func_call in api_response.choices[0].message.tool_calls
-            ]
             tool_calls = [
-                tool_call.model_dump()
-                for tool_call in api_response.choices[0].message.tool_calls
+                json.loads(toolcallstr)
+                for toolcallstr in self._output_re.findall(model_responses)
             ]
         except:
-            model_responses = api_response.choices[0].message.content
-            tool_calls = []
+            try:
+                tool_calls = json.loads(model_responses)
+            except:
+                tool_calls = []
 
         return {
             "model_responses": model_responses,
