@@ -73,22 +73,25 @@ class LocalLORA(OpenAIHandler):
 
     def _parse_query_response_FC(self, api_response: any) -> dict:
 
-        model_responses: str = api_response.choices[0].message.content
+        tool_calls = []
+        model_responses_raw: str = api_response.choices[0].message.content
 
         try:
-            tool_calls = [
-                json.loads(toolcallstr)
-                for toolcallstr in self._output_re.findall(model_responses)
-            ]
+            for tool_call_str in self._output_re.findall(model_responses_raw):
+                tool_call_obj = json.loads(tool_call_str)
+                tool_calls.append({tool_call_obj["name"]: tool_call_obj["arguments"]})
         except:
             try:
-                tool_calls = json.loads(model_responses)
+                for tool_call_obj in json.loads(model_responses_raw):
+                    tool_calls.append(
+                        {tool_call_obj["name"]: tool_call_obj["arguments"]}
+                    )
             except:
-                tool_calls = []
+                pass
 
         return {
-            "model_responses": model_responses,
-            "model_responses_message_for_chat_history": tool_calls,
+            "model_responses": tool_calls,
+            "model_responses_message_for_chat_history": model_responses_raw,
             "input_token": api_response.usage.prompt_tokens,
             "output_token": api_response.usage.completion_tokens,
         }
