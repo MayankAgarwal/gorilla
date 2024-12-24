@@ -79,8 +79,15 @@ class LocalLORA(OpenAIHandler):
         try:
             for tool_call_str in self._output_re.findall(model_responses_raw):
                 tool_call_obj = json.loads(tool_call_str)
-                tool_calls.append({tool_call_obj["name"]: tool_call_obj["arguments"]})
-        except:
+                if isinstance(tool_call_obj, list):
+                    tool_calls.extend(
+                        [{call["name"]: call["arguments"]} for call in tool_call_obj]
+                    )
+                elif isinstance(tool_call_obj, dict):
+                    tool_calls.append(
+                        {tool_call_obj["name"]: tool_call_obj["arguments"]}
+                    )
+        except Exception as err:
             try:
                 for tool_call_obj in json.loads(model_responses_raw):
                     tool_calls.append(
