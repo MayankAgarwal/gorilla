@@ -29,7 +29,8 @@ The example format is as follows. Please make sure the parameter type is correct
 class LocalLORA(OpenAIHandler):
     def __init__(self, model_name, temperature) -> None:
         super().__init__(model_name, temperature)
-        self.model_style = ModelStyle.OSSMODEL
+        self.model_style = ModelStyle.OpenAI
+        self.is_fc_model = True
 
         base_url = os.getenv("BFCL_LORA_URL")
         assert base_url is not None, "'BFCL_LORA_URL' not set"
