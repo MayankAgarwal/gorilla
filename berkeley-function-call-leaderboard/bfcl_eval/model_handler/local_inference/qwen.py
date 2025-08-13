@@ -175,7 +175,13 @@ class QwenHandler(OSSHandler):
 
     @override
     def _parse_query_response_prompting(self, api_response: any) -> dict:
-        model_response = api_response.choices[0].text
+
+        if isinstance(api_response, str):
+            # For Best-of-N sampling we pass api_response as string instead
+            # of an object
+            model_response = api_response
+        else:
+            model_response = api_response.choices[0].text
 
         reasoning_content = ""
         cleaned_response = model_response

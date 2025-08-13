@@ -255,7 +255,13 @@ class MistralFCHandler(OSSHandler):
 
     @override
     def _parse_query_response_prompting(self, api_response: any) -> dict:
-        model_responses = api_response.choices[0].text
+        if isinstance(api_response, str):
+            # For Best-of-N sampling we pass api_response as string instead
+            # of an object
+            model_responses = api_response
+        else:
+            model_responses = api_response.choices[0].text
+
         tool_call_ids = []
         """
         Mistral models require a tool_call_id, which should be 9 randomly-generated alphanumeric characters, and assigned to the id key of the tool call dictionary.

@@ -634,20 +634,19 @@ class OSSHandler(BaseHandler, EnforceOverrides):
     @override
     def _parse_query_response_prompting(self, api_response: any) -> dict:
 
+        if isinstance(api_response, str):
+            model_responses = api_response
+        else:
+            model_responses = api_response.choices[0].text
+
         return {
-            "model_responses": api_response.choices[0].text,
+            "model_responses": model_responses,
             "input_token": api_response.usage.prompt_tokens,
             "output_token": api_response.usage.completion_tokens,
             "best_of_n_responses": {
                 "model_responses": [choice.text for choice in api_response.choices]
             },
         }
-
-        # return {
-        #     "model_responses": api_response.choices[0].text,
-        #     "input_token": api_response.usage.prompt_tokens,
-        #     "output_token": api_response.usage.completion_tokens,
-        # }
 
     @override
     def _rank_generations_(self, api_response: any, inference_data: dict):
@@ -658,8 +657,12 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         generated_tool_calls: list[list[dict]] = []
         for choice in api_response.choices:
             try:
+                # Parse model response (remove thinking tag and only extract tool call)
+                response = self._parse_query_response_prompting(choice.text)
+                response = response["model_responses"]
+
                 # TODO: Is decode_ast sufficient or we need to execute decode_execute too?
-                decoded_generation = self.decode_ast(choice.text)
+                decoded_generation = self.decode_ast(response)
             except Exception as err:
                 decoded_generation = []
             finally:
