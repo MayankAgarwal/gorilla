@@ -249,7 +249,14 @@ class QwenFCHandler(OSSHandler):
 
     @override
     def _parse_query_response_prompting(self, api_response: any) -> dict:
-        model_response = api_response.choices[0].text
+
+        if isinstance(api_response, str):
+            # For Best-of-N sampling we pass api_response as string instead
+            # of an object
+            model_response = api_response
+        else:
+            model_response = api_response.choices[0].text
+
         extracted_tool_calls = self._extract_tool_calls(model_response)
 
         reasoning_content = ""
