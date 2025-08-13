@@ -6,8 +6,8 @@ from overrides import override
 
 
 class Falcon3FCHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
         self.model_name_huggingface = model_name.replace("-FC", "")
 
     @override
@@ -15,10 +15,7 @@ class Falcon3FCHandler(OSSHandler):
         """Format the prompt according to Falcon 3's chat template."""
         tokenizer = self.tokenizer
         formatted_prompt = tokenizer.apply_chat_template(
-            messages,
-            tools=function,
-            tokenize=False,
-            add_generation_prompt=True
+            messages, tools=function, tokenize=False, add_generation_prompt=True
         )
         return formatted_prompt
 
@@ -29,7 +26,9 @@ class Falcon3FCHandler(OSSHandler):
             if "<tool_call>" not in result:
                 return []
 
-            tool_calls_str = result.split("<tool_call>")[1].split("</tool_call>")[0].strip()
+            tool_calls_str = (
+                result.split("<tool_call>")[1].split("</tool_call>")[0].strip()
+            )
 
             if tool_calls_str.startswith("```") and tool_calls_str.endswith("```"):
                 tool_calls_str = tool_calls_str.strip("```").strip()
@@ -58,7 +57,9 @@ class Falcon3FCHandler(OSSHandler):
             if "<tool_call>" not in result:
                 return []
 
-            tool_calls_str = result.split("<tool_call>")[1].split("</tool_call>")[0].strip()
+            tool_calls_str = (
+                result.split("<tool_call>")[1].split("</tool_call>")[0].strip()
+            )
 
             if tool_calls_str.startswith("```") and tool_calls_str.endswith("```"):
                 tool_calls_str = tool_calls_str.strip("```").strip()

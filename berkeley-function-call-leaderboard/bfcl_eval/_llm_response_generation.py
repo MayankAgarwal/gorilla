@@ -30,7 +30,9 @@ RETRY_DELAY = 65  # Delay in seconds
 def get_args():
     parser = argparse.ArgumentParser()
     # Refer to model_choice for supported models.
-    parser.add_argument("--model", type=str, default="gorilla-openfunctions-v2", nargs="+")
+    parser.add_argument(
+        "--model", type=str, default="gorilla-openfunctions-v2", nargs="+"
+    )
     # Refer to test_categories for supported categories.
     parser.add_argument("--test-category", type=str, default="all", nargs="+")
 
@@ -40,7 +42,9 @@ def get_args():
     parser.add_argument("--exclude-state-log", action="store_true", default=False)
     parser.add_argument("--num-threads", default=1, type=int)
     parser.add_argument("--num-gpus", default=1, type=int)
-    parser.add_argument("--backend", default="vllm", type=str, choices=["vllm", "sglang"])
+    parser.add_argument(
+        "--backend", default="vllm", type=str, choices=["vllm", "sglang"]
+    )
     parser.add_argument("--gpu-memory-utilization", default=0.9, type=float)
     parser.add_argument("--result-dir", default=None, type=str)
     parser.add_argument("--run-ids", action="store_true", default=False)
@@ -50,7 +54,7 @@ def get_args():
         "--skip-server-setup",
         action="store_true",
         default=False,
-        help="Skip vLLM/SGLang server setup and use existing endpoint specified by the VLLM_ENDPOINT and VLLM_PORT environment variables."
+        help="Skip vLLM/SGLang server setup and use existing endpoint specified by the VLLM_ENDPOINT and VLLM_PORT environment variables.",
     )
     # Optional local model path
     parser.add_argument(
@@ -64,9 +68,11 @@ def get_args():
     return args
 
 
-def build_handler(model_name, temperature):
+def build_handler(model_name, temperature, num_generations=1):
     config = MODEL_CONFIG_MAPPING[model_name]
-    handler = config.model_handler(model_name, temperature)
+    handler = config.model_handler(
+        model_name, temperature, num_generations=num_generations
+    )
     # Propagate config flags to the handler instance
     handler.is_fc_model = config.is_fc_model
     return handler
@@ -92,7 +98,9 @@ def get_involved_test_entries(test_category_args, run_ids):
             all_test_file_paths.append(test_file_path)
 
     else:
-        all_test_file_paths, all_test_categories = parse_test_category_argument(test_category_args)
+        all_test_file_paths, all_test_categories = parse_test_category_argument(
+            test_category_args
+        )
         # Make a copy here since we are removing list elemenets inside the for loop
         for test_category, file_to_open in zip(
             all_test_categories[:], all_test_file_paths[:]
@@ -107,7 +115,11 @@ def get_involved_test_entries(test_category_args, run_ids):
 
 
 def collect_test_cases(
-    args, model_name, all_test_categories, all_test_file_paths, all_test_entries_involved
+    args,
+    model_name,
+    all_test_categories,
+    all_test_file_paths,
+    all_test_entries_involved,
 ):
     model_name_dir = model_name.replace("/", "_")
     model_result_dir = args.result_dir / model_name_dir
@@ -115,7 +127,9 @@ def collect_test_cases(
     existing_result = []
     for test_category, file_to_open in zip(all_test_categories, all_test_file_paths):
 
-        result_file_path = model_result_dir / file_to_open.replace(".json", "_result.json")
+        result_file_path = model_result_dir / file_to_open.replace(
+            ".json", "_result.json"
+        )
         if result_file_path.exists():
             # Not allowing overwrite, we will load the existing results
             if not args.allow_overwrite:
@@ -151,7 +165,8 @@ def process_multi_turn_test_case(test_cases):
         for func_collection in involved_classes:
             # func_doc is a list of dict
             func_doc = load_file(
-                MULTI_TURN_FUNC_DOC_PATH / MULTI_TURN_FUNC_DOC_FILE_MAPPING[func_collection]
+                MULTI_TURN_FUNC_DOC_PATH
+                / MULTI_TURN_FUNC_DOC_FILE_MAPPING[func_collection]
             )
             entry["function"].extend(func_doc)
 
@@ -211,7 +226,7 @@ def multi_threaded_inference(handler, test_case, include_input_log, exclude_stat
                 return {
                     "id": test_case["id"],
                     "result": f"Error during inference: {str(e)}",
-                    "traceback": traceback.format_exc()
+                    "traceback": traceback.format_exc(),
                 }
 
     result_to_write = {
@@ -269,6 +284,56 @@ def generate_results(args, model_name, test_cases_total):
                     pbar.update()
 
 
+def generate_results_bestofN(args, model_name, test_cases_total):
+    update_mode = args.allow_overwrite
+    handler = build_handler(model_name, args.temperature, args.num_generations)
+
+    if handler.model_style == ModelStyle.OSSMODEL:
+        # batch_inference will handle the writing of results
+        handler.batch_inference_bestofN(
+            test_entries=test_cases_total,
+            generation_gpu_ids=args.generation_gpu_ids,
+            rm_gpu_ids=args.rm_gpu_ids,
+            rm_model_name_or_path=args.rm_model_name_or_path,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            backend=args.backend,
+            skip_server_setup=args.skip_server_setup,
+            local_model_path=args.local_model_path,
+            include_input_log=args.include_input_log,
+            exclude_state_log=args.exclude_state_log,
+            result_dir=args.result_dir,
+            update_mode=update_mode,
+        )
+
+    else:
+        raise NotImplementedError(
+            "Best-of-N sampling not yet implemented for API based models"
+        )
+        futures = []
+        with ThreadPoolExecutor(max_workers=args.num_threads) as executor:
+            with tqdm(
+                total=len(test_cases_total), desc=f"Generating results for {model_name}"
+            ) as pbar:
+
+                for test_case in test_cases_total:
+                    future = executor.submit(
+                        multi_threaded_inference,
+                        handler,
+                        test_case,
+                        args.include_input_log,
+                        args.exclude_state_log,
+                    )
+                    futures.append(future)
+
+                for future in futures:
+                    # This will wait for the task to complete, so that we are always writing in order
+                    result = future.result()
+                    handler.write(
+                        result, result_dir=args.result_dir, update_mode=args.run_ids
+                    )  # Only when we run specific test ids, we will need update_mode=True to keep entries in the same order
+                    pbar.update()
+
+
 def main(args):
 
     if type(args.model) is not list:
@@ -285,10 +350,10 @@ def main(args):
     for model_name in args.model:
         if model_name not in MODEL_CONFIG_MAPPING:
             raise ValueError(
-                        f"Unknown model_name '{model_name}'.\n"
-                        "• For officially supported models, please refer to `SUPPORTED_MODELS.md`.\n"
-                        "• For running new models, please refer to `README.md` and `CONTRIBUTING.md`."
-                    )
+                f"Unknown model_name '{model_name}'.\n"
+                "• For officially supported models, please refer to `SUPPORTED_MODELS.md`.\n"
+                "• For running new models, please refer to `README.md` and `CONTRIBUTING.md`."
+            )
     print(f"Generating results for {args.model}")
     if args.run_ids:
         print("Running specific test cases. Ignoring `--test-category` argument.")
@@ -315,3 +380,55 @@ def main(args):
             )
         else:
             generate_results(args, model_name, test_cases_total)
+
+
+def main_bestofN(args):
+
+    assert (
+        len(args.rm_gpu_ids) >= 1 and len(args.generation_gpu_ids) >= 1
+    ), "rm_gpu_ids or generation_gpu_ids is empty"
+
+    if type(args.model) is not list:
+        args.model = [args.model]
+    if type(args.test_category) is not list:
+        args.test_category = [args.test_category]
+
+    (
+        all_test_file_paths,
+        all_test_categories,
+        all_test_entries_involved,
+    ) = get_involved_test_entries(args.test_category, args.run_ids)
+
+    for model_name in args.model:
+        if model_name not in MODEL_CONFIG_MAPPING:
+            raise ValueError(
+                f"Unknown model_name '{model_name}'.\n"
+                "• For officially supported models, please refer to `SUPPORTED_MODELS.md`.\n"
+                "• For running new models, please refer to `README.md` and `CONTRIBUTING.md`."
+            )
+    print(f"Generating results for {args.model}")
+    if args.run_ids:
+        print("Running specific test cases. Ignoring `--test-category` argument.")
+    else:
+        print(f"Running full test cases for categories: {all_test_categories}.")
+
+    if args.result_dir is not None:
+        args.result_dir = PROJECT_ROOT / args.result_dir
+    else:
+        args.result_dir = RESULT_PATH
+
+    for model_name in args.model:
+        test_cases_total = collect_test_cases(
+            args,
+            model_name,
+            all_test_categories,
+            all_test_file_paths,
+            all_test_entries_involved,
+        )
+
+        if len(test_cases_total) == 0:
+            print(
+                f"All selected test cases have been previously generated for {model_name}. No new test cases to generate."
+            )
+        else:
+            generate_results_bestofN(args, model_name, test_cases_total)

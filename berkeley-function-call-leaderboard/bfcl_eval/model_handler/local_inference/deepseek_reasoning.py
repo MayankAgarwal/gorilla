@@ -14,8 +14,8 @@ class DeepseekReasoningHandler(OSSHandler):
     We DO also support the benchmark/inference for DeepSeek-R1 model through their official hosted API. The `api_inference/deepseek.py` file contains the implementation for the API inference handler.
     """
 
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def _pre_query_processing_prompting(self, test_entry: dict) -> dict:
@@ -93,9 +93,7 @@ class DeepseekReasoningHandler(OSSHandler):
 
             elif message["role"] == "assistant" and "tool_calls" not in message:
                 if is_tool:
-                    formatted_prompt += (
-                        f"<｜tool▁outputs▁end｜>{message['content']}<｜end▁of▁sentence｜>"
-                    )
+                    formatted_prompt += f"<｜tool▁outputs▁end｜>{message['content']}<｜end▁of▁sentence｜>"
                     is_tool = False
                 else:
                     content = message["content"]
@@ -109,9 +107,7 @@ class DeepseekReasoningHandler(OSSHandler):
                     formatted_prompt += f"<｜tool▁outputs▁begin｜><｜tool▁output▁begin｜>{message['content']}<｜tool▁output▁end｜>"
                     is_output_first = False
                 else:
-                    formatted_prompt += (
-                        f"<｜tool▁output▁begin｜>{message['content']}<｜tool▁output▁end｜>"
-                    )
+                    formatted_prompt += f"<｜tool▁output▁begin｜>{message['content']}<｜tool▁output▁end｜>"
 
         if is_tool:
             formatted_prompt += "<｜tool▁outputs▁end｜>"
@@ -123,7 +119,10 @@ class DeepseekReasoningHandler(OSSHandler):
 
     @override
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         # Deepseek don't take the tool role; so we use the user role to send the tool output
         tool_message = {
@@ -168,7 +167,9 @@ class DeepseekReasoningHandler(OSSHandler):
         inference_data["message"].append(
             {
                 "role": "assistant",
-                "content": model_response_data["model_responses_message_for_chat_history"],
+                "content": model_response_data[
+                    "model_responses_message_for_chat_history"
+                ],
             }
         )
         return inference_data

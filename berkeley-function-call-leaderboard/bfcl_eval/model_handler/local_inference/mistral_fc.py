@@ -11,8 +11,8 @@ from overrides import override
 
 
 class MistralFCHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def decode_ast(self, result, language="Python"):
@@ -228,7 +228,10 @@ class MistralFCHandler(OSSHandler):
 
     @override
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         for execution_result, tool_call_id in zip(
             execution_results, model_response_data["tool_call_ids"]
@@ -294,7 +297,9 @@ class MistralFCHandler(OSSHandler):
         inference_data["message"].append(
             {
                 "role": "assistant",
-                "content": model_response_data["model_responses_message_for_chat_history"],
+                "content": model_response_data[
+                    "model_responses_message_for_chat_history"
+                ],
             }
         )
         return inference_data

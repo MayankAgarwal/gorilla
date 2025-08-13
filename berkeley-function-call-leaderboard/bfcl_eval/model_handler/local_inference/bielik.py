@@ -5,8 +5,8 @@ from overrides import override
 
 
 class BielikHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def _format_prompt(self, messages, function):
@@ -18,8 +18,10 @@ class BielikHandler(OSSHandler):
         formatted_prompt = "<s>"
 
         for message in messages:
-            formatted_prompt += f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+            formatted_prompt += (
+                f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+            )
 
         formatted_prompt += f"<|im_start|>assistant\n"
-        
+
         return formatted_prompt

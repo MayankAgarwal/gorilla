@@ -6,24 +6,25 @@ class DeepseekHandler(OSSHandler):
     """
     This is the handler for the Deepseek model. Deepseek-Coder models should use the DeepseekCoderHandler instead.
     """
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def decode_ast(self, result, language="Python"):
         result = result.strip()
         if result.startswith("```json"):
-            result = result[len("```json"):]
+            result = result[len("```json") :]
         if result.startswith("```python"):
-            result = result[len("```python"):]
+            result = result[len("```python") :]
         return super().decode_ast(result, language)
 
     @override
     def decode_execute(self, result):
         if result.startswith("```json"):
-            result = result[len("```json"):]
+            result = result[len("```json") :]
         if result.startswith("```python"):
-            result = result[len("```python"):]
+            result = result[len("```python") :]
         return super().decode_execute(result)
 
     @override
@@ -53,7 +54,9 @@ class DeepseekHandler(OSSHandler):
             if message["role"] == "user":
                 formatted_prompt += f"User: {message['content']}\n\n"
             elif message["role"] == "assistant":
-                formatted_prompt += f"Assistant: {message['content']}<｜end▁of▁sentence｜>"
+                formatted_prompt += (
+                    f"Assistant: {message['content']}<｜end▁of▁sentence｜>"
+                )
             elif message["role"] == "system":
                 formatted_prompt += f"{message['content']}\n\n"
 
@@ -63,7 +66,10 @@ class DeepseekHandler(OSSHandler):
 
     @override
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         # Deepseek don't take the tool role; so we use the user role to send the tool output
         tool_message = {

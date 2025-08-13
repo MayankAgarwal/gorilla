@@ -6,8 +6,8 @@ from overrides import override
 
 
 class SalesforceQwenHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def _format_prompt(self, messages, function):
@@ -53,9 +53,7 @@ class SalesforceQwenHandler(OSSHandler):
                     )
                 formatted_prompt += json.dumps(tool_calls) + "<|im_end|>"
             else:
-                formatted_prompt += (
-                    f"<|im_start|>{message['role']}\n{message['content'].strip()}<|im_end|>"
-                )
+                formatted_prompt += f"<|im_start|>{message['role']}\n{message['content'].strip()}<|im_end|>"
 
         formatted_prompt += "<|im_start|>assistant\n"
         return formatted_prompt

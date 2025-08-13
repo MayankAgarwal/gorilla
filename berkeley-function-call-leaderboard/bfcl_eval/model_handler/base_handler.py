@@ -23,7 +23,7 @@ class BaseHandler:
     model_name: str
     model_style: ModelStyle
 
-    def __init__(self, model_name, temperature) -> None:
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
         self.model_name = model_name
         # Replace the slash with underscore to avoid creating subdirectories
         # Replace the dash and dot with underscore for valid variable name
@@ -31,9 +31,12 @@ class BaseHandler:
             model_name.replace("/", "_").replace("-", "_").replace(".", "_")
         )
         self.temperature = temperature
+        self.num_generations = num_generations
         self.is_fc_model = False  # Whether the model is a function calling model
 
-    def inference(self, test_entry: dict, include_input_log: bool, exclude_state_log: bool):
+    def inference(
+        self, test_entry: dict, include_input_log: bool, exclude_state_log: bool
+    ):
         # This method is used to retrive model response for each model.
 
         # FC model
@@ -52,7 +55,9 @@ class BaseHandler:
                     test_entry, include_input_log, exclude_state_log
                 )
             else:
-                return self.inference_single_turn_prompting(test_entry, include_input_log)
+                return self.inference_single_turn_prompting(
+                    test_entry, include_input_log
+                )
 
     @final
     def inference_multi_turn_FC(
@@ -163,6 +168,11 @@ class BaseHandler:
 
                 api_response, query_latency = self._query_FC(inference_data)
 
+                # Rank generations using a Reward Model
+                api_response, rm_scores_sorted = self._rank_generations_(
+                    api_response=api_response, inference_data=inference_data
+                )
+
                 # This part of logging is disabled by default because it is too verbose and will make the result file extremely large
                 # It is only useful to see if the inference pipeline is working as expected (eg, does it convert all the inputs correctly)
                 if include_input_log:
@@ -183,8 +193,12 @@ class BaseHandler:
                 )
 
                 # Process the metadata
-                current_turn_input_token_count.append(model_response_data["input_token"])
-                current_turn_output_token_count.append(model_response_data["output_token"])
+                current_turn_input_token_count.append(
+                    model_response_data["input_token"]
+                )
+                current_turn_output_token_count.append(
+                    model_response_data["output_token"]
+                )
                 current_turn_latency.append(query_latency)
 
                 current_turn_response.append(model_responses)
@@ -424,6 +438,11 @@ class BaseHandler:
 
                 api_response, query_latency = self._query_prompting(inference_data)
 
+                # Rank generations using a Reward Model
+                api_response, rm_scores_sorted = self._rank_generations_(
+                    api_response=api_response, inference_data=inference_data
+                )
+
                 # This part of logging is disabled by default because it is too verbose and will make the result file extremely large
                 # It is only useful to see if the inference pipeline is working as expected (eg, does it convert all the inputs correctly)
                 if include_input_log:
@@ -444,8 +463,12 @@ class BaseHandler:
                 )
 
                 # Process the metadata
-                current_turn_input_token_count.append(model_response_data["input_token"])
-                current_turn_output_token_count.append(model_response_data["output_token"])
+                current_turn_input_token_count.append(
+                    model_response_data["input_token"]
+                )
+                current_turn_output_token_count.append(
+                    model_response_data["output_token"]
+                )
                 current_turn_latency.append(query_latency)
 
                 current_turn_response.append(model_responses)
@@ -472,7 +495,9 @@ class BaseHandler:
                         }
                     )
 
-                    model_response_data["model_responses_decoded"] = decoded_model_responses
+                    model_response_data["model_responses_decoded"] = (
+                        decoded_model_responses
+                    )
                     if is_empty_execute_response(decoded_model_responses):
                         print("Empty response from the model. Proceed to next turn.")
                         current_step_inference_log.append(
@@ -592,6 +617,11 @@ class BaseHandler:
 
         api_response, query_latency = self._query_FC(inference_data)
 
+        # Rank generations using a Reward Model
+        api_response, rm_scores_sorted = self._rank_generations_(
+            api_response=api_response, inference_data=inference_data
+        )
+
         # Try parsing the model response
         model_response_data = self._parse_query_response_FC(api_response)
 
@@ -607,6 +637,7 @@ class BaseHandler:
         metadata["input_token_count"] = model_response_data["input_token"]
         metadata["output_token_count"] = model_response_data["output_token"]
         metadata["latency"] = query_latency
+        metadata["rm_scores_sorted"] = rm_scores_sorted
 
         if (
             "reasoning_content" in model_response_data
@@ -627,6 +658,11 @@ class BaseHandler:
 
         api_response, query_latency = self._query_prompting(inference_data)
 
+        # Rank generations using a Reward Model
+        api_response, rm_scores_sorted = self._rank_generations_(
+            api_response=api_response, inference_data=inference_data
+        )
+
         # Try parsing the model response
         model_response_data = self._parse_query_response_prompting(api_response)
 
@@ -642,6 +678,8 @@ class BaseHandler:
         metadata["input_token_count"] = model_response_data["input_token"]
         metadata["output_token_count"] = model_response_data["output_token"]
         metadata["latency"] = query_latency
+        metadata["rm_scores_sorted"] = rm_scores_sorted
+        metadata["all_responses"] = [choice.text for choice in api_response.choices]
 
         if (
             "reasoning_content" in model_response_data
@@ -791,7 +829,10 @@ class BaseHandler:
         raise NotImplementedError
 
     def _add_execution_results_FC(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         """
         Add the execution results to the chat history to prepare for the next turn of query.
@@ -836,6 +877,9 @@ class BaseHandler:
         """
         raise NotImplementedError
 
+    def _rank_generations_(self, api_response: any, inference_data: dict):
+        raise NotADirectoryError
+
     def add_first_turn_message_prompting(
         self, inference_data: dict, first_turn_message: list[dict]
     ) -> dict:
@@ -873,7 +917,10 @@ class BaseHandler:
         raise NotImplementedError
 
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         """
         Add the execution results to the chat history to prepare for the next turn of query.

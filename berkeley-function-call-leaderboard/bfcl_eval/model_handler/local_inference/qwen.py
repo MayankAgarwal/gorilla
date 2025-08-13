@@ -3,8 +3,8 @@ from overrides import override
 
 
 class QwenHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
         self.is_fc_model = False
 
     @override
@@ -104,7 +104,9 @@ class QwenHandler(OSSHandler):
         formatted_prompt = ""
 
         if messages[0]["role"] == "system":
-            formatted_prompt += f"<|im_start|>system\n{messages[0]['content']}<|im_end|>\n"
+            formatted_prompt += (
+                f"<|im_start|>system\n{messages[0]['content']}<|im_end|>\n"
+            )
 
         last_query_index = len(messages) - 1
         for offset, message in enumerate(reversed(messages)):
@@ -156,7 +158,9 @@ class QwenHandler(OSSHandler):
 
             elif role == "tool":
                 prev_role = messages[idx - 1]["role"] if idx > 0 else None
-                next_role = messages[idx + 1]["role"] if idx < len(messages) - 1 else None
+                next_role = (
+                    messages[idx + 1]["role"] if idx < len(messages) - 1 else None
+                )
 
                 if idx == 0 or prev_role != "tool":
                     formatted_prompt += "<|im_start|>user"

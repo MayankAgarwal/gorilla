@@ -29,8 +29,8 @@ The example format is as follows. Please make sure the parameter type is correct
 
 
 class HammerHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def _format_prompt(self, messages, function):
@@ -52,7 +52,9 @@ class HammerHandler(OSSHandler):
                         format_tools["parameters"][param]["properties"], dict
                     ):
                         required = format_tools["parameters"][param].get("required", [])
-                        format_tools["parameters"][param] = format_tools["parameters"][param]["properties"]
+                        format_tools["parameters"][param] = format_tools["parameters"][
+                            param
+                        ]["properties"]
                         for p in required:
                             format_tools["parameters"][param][p]["required"] = True
 
@@ -76,7 +78,9 @@ class HammerHandler(OSSHandler):
         user_query = ""
 
         for message in messages:
-            user_query += f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+            user_query += (
+                f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
+            )
 
         content = f"[BEGIN OF TASK INSTRUCTION]\n{TASK_INSTRUCTION}\n[END OF TASK INSTRUCTION]\n\n"
         content += (

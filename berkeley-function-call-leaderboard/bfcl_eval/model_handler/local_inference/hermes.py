@@ -12,8 +12,8 @@ from overrides import override
 
 
 class HermesHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
         # Only this specific Hermes model uses float16
         if model_name == "NousResearch/Hermes-2-Pro-Llama-3-8B":
             self.dtype = "float16"
@@ -112,7 +112,10 @@ class HermesHandler(OSSHandler):
 
     @override
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         for execution_result, decoded_model_response in zip(
             execution_results, model_response_data["model_responses_decoded"]

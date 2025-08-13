@@ -5,8 +5,8 @@ from overrides import override
 
 
 class ThinkAgentHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     def _convert_functions_format(self, functions):
         if isinstance(functions, dict):
@@ -14,7 +14,8 @@ class ThinkAgentHandler(OSSHandler):
                 "name": functions["name"],
                 "description": functions["description"],
                 "parameters": {
-                    k: v for k, v in functions["parameters"].get("properties", {}).items()
+                    k: v
+                    for k, v in functions["parameters"].get("properties", {}).items()
                 },
             }
         elif isinstance(functions, list):

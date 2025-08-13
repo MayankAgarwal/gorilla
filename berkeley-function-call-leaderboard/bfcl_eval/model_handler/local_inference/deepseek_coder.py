@@ -16,8 +16,8 @@ class DeepseekCoderHandler(OSSHandler):
     This is the handler for the Deepseek-Coder models. Models are benchmarked in their Function Calling mode.
     """
 
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def decode_ast(self, result, language="Python"):
@@ -85,9 +85,7 @@ class DeepseekCoderHandler(OSSHandler):
 
             elif message["role"] == "assistant" and message["content"] is not None:
                 if is_tool:
-                    formatted_prompt += (
-                        f"<｜tool▁outputs▁end｜>{message['content']}<｜end▁of▁sentence｜>"
-                    )
+                    formatted_prompt += f"<｜tool▁outputs▁end｜>{message['content']}<｜end▁of▁sentence｜>"
                     is_tool = False
                 else:
                     formatted_prompt += (
@@ -218,5 +216,7 @@ class DeepseekCoderHandler(OSSHandler):
                 argument = json.loads(argument)
             except Exception as e:
                 pass
-            result.append({"type": type, "function": {"name": name, "arguments": argument}})
+            result.append(
+                {"type": type, "function": {"name": name, "arguments": argument}}
+            )
         return result

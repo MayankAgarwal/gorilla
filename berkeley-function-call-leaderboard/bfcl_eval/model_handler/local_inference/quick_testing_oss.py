@@ -10,8 +10,8 @@ Formatting the prompt manually give us better control over the final formatted p
 
 
 class QuickTestingOSSHandler(OSSHandler):
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
 
     @override
     def _format_prompt(self, messages, function):

@@ -7,6 +7,7 @@ from typing import List, Optional
 import typer
 from importlib.metadata import version as _version
 from bfcl_eval._llm_response_generation import main as generation_main
+from bfcl_eval._llm_response_generation import main_bestofN as generation_bestofN
 from bfcl_eval.constants.category_mapping import TEST_COLLECTION_MAPPING
 from bfcl_eval.constants.eval_config import (
     DOTENV_PATH,
@@ -26,6 +27,7 @@ class ExecutionOrderGroup(typer.core.TyperGroup):
             "models",
             "test-categories",
             "generate",
+            "generate-bestofn",
             "results",
             "evaluate",
             "scores",
@@ -57,12 +59,16 @@ def handle_multiple_input(input_str):
 
     return [item.strip() for item in ",".join(input_str).split(",") if item.strip()]
 
+
 @cli.command()
 def version():
     """
     Show the bfcl version. PyPI versions are in development, please rely on the commit hash for reproducibility.
     """
-    print(f"bfcl version: {_version('bfcl')} \nNote: pypi versions are in development, please rely on the commit hash for reproducibility.")
+    print(
+        f"bfcl version: {_version('bfcl')} \nNote: pypi versions are in development, please rely on the commit hash for reproducibility."
+    )
+
 
 @cli.command()
 def test_categories():
@@ -96,14 +102,14 @@ def models():
 @cli.command()
 def generate(
     model: List[str] = typer.Option(
-        ["gorilla-openfunctions-v2"], 
+        ["gorilla-openfunctions-v2"],
         help="A list of model names to generate the llm response. Use commas to separate multiple models.",
-        callback=handle_multiple_input
+        callback=handle_multiple_input,
     ),
     test_category: List[str] = typer.Option(
-        ["all"], 
+        ["all"],
         help="A list of test categories to run the evaluation on. Use commas to separate multiple test categories.",
-        callback=handle_multiple_input
+        callback=handle_multiple_input,
     ),
     temperature: float = typer.Option(
         0.001, help="The temperature parameter for the model."
@@ -120,7 +126,9 @@ def generate(
     ),
     num_gpus: int = typer.Option(1, help="The number of GPUs to use."),
     num_threads: int = typer.Option(1, help="The number of threads to use."),
-    gpu_memory_utilization: float = typer.Option(0.9, help="The GPU memory utilization."),
+    gpu_memory_utilization: float = typer.Option(
+        0.9, help="The GPU memory utilization."
+    ),
     backend: str = typer.Option("vllm", help="The backend to use for the model."),
     skip_server_setup: bool = typer.Option(
         False,
@@ -169,8 +177,110 @@ def generate(
         allow_overwrite=allow_overwrite,
         run_ids=run_ids,
     )
-    load_dotenv(dotenv_path=DOTENV_PATH, verbose=True, override=True)  # Load the .env file
+    load_dotenv(
+        dotenv_path=DOTENV_PATH, verbose=True, override=True
+    )  # Load the .env file
     generation_main(args)
+
+
+@cli.command()
+def generate_bestofN(
+    model: List[str] = typer.Option(
+        ["gorilla-openfunctions-v2"],
+        help="A list of model names to generate the llm response. Use commas to separate multiple models.",
+        callback=handle_multiple_input,
+    ),
+    test_category: List[str] = typer.Option(
+        ["all"],
+        help="A list of test categories to run the evaluation on. Use commas to separate multiple test categories.",
+        callback=handle_multiple_input,
+    ),
+    num_generations: int = typer.Option(
+        1, help="Number of generations to sample from the model"
+    ),
+    temperature: float = typer.Option(
+        0.001, help="The temperature parameter for the model."
+    ),
+    include_input_log: bool = typer.Option(
+        False,
+        "--include-input-log",
+        help="Include the fully-transformed input to the model inference endpoint in the inference log; only relevant for debugging input integrity and format.",
+    ),
+    exclude_state_log: bool = typer.Option(
+        False,
+        "--exclude-state-log",
+        help="Exclude info about the state of each API system after each turn in the inference log; only relevant for multi-turn categories.",
+    ),
+    generation_gpu_ids: List[str] = typer.Option(
+        ["0"],
+        help="GPU IDs to host the generator model",
+        callback=handle_multiple_input,
+    ),
+    rm_gpu_ids: List[str] = typer.Option(
+        ["1"],
+        help="GPU IDs for hosting the reward model",
+        callback=handle_multiple_input,
+    ),
+    rm_model_name_or_path: str = typer.Option(None, help="Reward model path"),
+    num_threads: int = typer.Option(1, help="The number of threads to use."),
+    gpu_memory_utilization: float = typer.Option(
+        0.9, help="The GPU memory utilization."
+    ),
+    backend: str = typer.Option("vllm", help="The backend to use for the model."),
+    skip_server_setup: bool = typer.Option(
+        False,
+        "--skip-server-setup",
+        help="Skip vLLM/SGLang server setup and use existing endpoint specified by the VLLM_ENDPOINT and VLLM_PORT environment variables.",
+    ),
+    local_model_path: Optional[str] = typer.Option(
+        None,
+        "--local-model-path",
+        help="Specify the path to a local directory containing the model's config/tokenizer/weights for fully offline inference. Use this only if the model weights are stored in a location other than the default HF_HOME directory.",
+    ),
+    result_dir: str = typer.Option(
+        RESULT_PATH,
+        "--result-dir",
+        help="Path to the folder where output files will be stored; Path should be relative to the `berkeley-function-call-leaderboard` root folder",
+    ),
+    allow_overwrite: bool = typer.Option(
+        False,
+        "--allow-overwrite",
+        "-o",
+        help="Allow overwriting existing results for regeneration.",
+    ),
+    run_ids: bool = typer.Option(
+        False,
+        "--run-ids",
+        help="If true, also run the test entry mentioned in the test_case_ids_to_generate.json file, in addition to the --test_category argument.",
+    ),
+):
+    """
+    Generate the LLM response for one or more models on a test-category (same as openfunctions_evaluation.py).
+    """
+
+    args = SimpleNamespace(
+        model=model,
+        rm_model_name_or_path=rm_model_name_or_path,
+        test_category=test_category,
+        temperature=temperature,
+        num_generations=num_generations,
+        include_input_log=include_input_log,
+        exclude_state_log=exclude_state_log,
+        generation_gpu_ids=generation_gpu_ids,
+        rm_gpu_ids=rm_gpu_ids,
+        num_threads=num_threads,
+        gpu_memory_utilization=gpu_memory_utilization,
+        backend=backend,
+        skip_server_setup=skip_server_setup,
+        local_model_path=local_model_path,
+        result_dir=result_dir,
+        allow_overwrite=allow_overwrite,
+        run_ids=run_ids,
+    )
+    load_dotenv(
+        dotenv_path=DOTENV_PATH, verbose=True, override=True
+    )  # Load the .env file
+    generation_bestofN(args)
 
 
 @cli.command()
@@ -216,7 +326,9 @@ def results(
         results_data.append(
             (
                 display_name(dir.name),
-                datetime.fromtimestamp(dir.stat().st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
+                datetime.fromtimestamp(dir.stat().st_ctime).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
             )
         )
 
@@ -232,14 +344,12 @@ def results(
 @cli.command()
 def evaluate(
     model: List[str] = typer.Option(
-        None, 
-        help="A list of model names to evaluate.",
-        callback=handle_multiple_input
+        None, help="A list of model names to evaluate.", callback=handle_multiple_input
     ),
     test_category: List[str] = typer.Option(
-        ["all"], 
+        ["all"],
         help="A list of test categories to run the evaluation on.",
-        callback=handle_multiple_input
+        callback=handle_multiple_input,
     ),
     result_dir: str = typer.Option(
         None,
@@ -256,7 +366,9 @@ def evaluate(
     Evaluate results from run of one or more models on a test-category (same as eval_runner.py).
     """
 
-    load_dotenv(dotenv_path=DOTENV_PATH, verbose=True, override=True)  # Load the .env file
+    load_dotenv(
+        dotenv_path=DOTENV_PATH, verbose=True, override=True
+    )  # Load the .env file
     evaluation_main(model, test_category, result_dir, score_dir)
 
 

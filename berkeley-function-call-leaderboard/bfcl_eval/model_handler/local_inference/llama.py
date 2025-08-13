@@ -6,19 +6,19 @@ class LlamaHandler(OSSHandler):
     """
     This the handler for the Llama models in function calling mode.
     According to the Llama model card, function calling should be handled differently
-    than what is suggested by the standard Hugging Face chat template. 
-    For more details, see: 
+    than what is suggested by the standard Hugging Face chat template.
+    For more details, see:
     https://www.llama.com/docs/model-cards-and-prompt-formats/llama4_omni/#-zero-shot-function-calling---system-message-
     This applies to all Llama 3 and Llama 4 series models, except for Llama 3.1.
-    
+
     In addition, because Llama uses the same system prompt as the default BFCL system
-    prompt that's normally provided to the model in "prompt mode", the constructed 
-    formatted prompt string remains same in both modes. 
+    prompt that's normally provided to the model in "prompt mode", the constructed
+    formatted prompt string remains same in both modes.
     As a result, we will not have separate "prompt mode" for Llama models to avoid confusion.
     """
 
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
         self.model_name_huggingface = model_name.replace("-FC", "")
 
     @override
@@ -44,7 +44,10 @@ class LlamaHandler(OSSHandler):
 
     @override
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         for execution_result in execution_results:
             # Llama uses the `ipython` role for execution results

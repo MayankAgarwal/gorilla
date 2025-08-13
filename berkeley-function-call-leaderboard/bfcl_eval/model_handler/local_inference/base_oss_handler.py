@@ -9,6 +9,7 @@ import traceback
 import requests
 from bfcl_eval.constants.eval_config import RESULT_PATH, VLLM_PORT
 from bfcl_eval.model_handler.base_handler import BaseHandler
+from bfcl_eval.model_handler.reward_model_handler import RewardModelHandler
 from bfcl_eval.model_handler.model_style import ModelStyle
 from bfcl_eval.model_handler.utils import (
     default_decode_ast_prompting,
@@ -22,8 +23,10 @@ from tqdm import tqdm
 
 
 class OSSHandler(BaseHandler, EnforceOverrides):
-    def __init__(self, model_name, temperature, dtype="bfloat16") -> None:
-        super().__init__(model_name, temperature)
+    def __init__(
+        self, model_name, temperature, dtype="bfloat16", num_generations=1
+    ) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
         self.model_name_huggingface = model_name
         self.model_style = ModelStyle.OSSMODEL
         self.dtype = dtype
@@ -39,8 +42,18 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         self.base_url = f"http://{self.vllm_host}:{self.vllm_port}/v1"
         self.client = OpenAI(base_url=self.base_url, api_key="EMPTY")
 
+        # Reward model server specific variables
+        self.vllm_rm_port = str(int(self.vllm_port) + 1)
+        self.reward_model_handler = RewardModelHandler(
+            vllm_rm_host=self.vllm_host,
+            vllm_rm_port=self.vllm_rm_port,
+            dtype=self.dtype,
+        )
+
     @override
-    def inference(self, test_entry: dict, include_input_log: bool, exclude_state_log: bool):
+    def inference(
+        self, test_entry: dict, include_input_log: bool, exclude_state_log: bool
+    ):
         """
         OSS models have a different inference method.
         They needs to spin up a server first and then send requests to it.
@@ -262,6 +275,247 @@ class OSSHandler(BaseHandler, EnforceOverrides):
                 stderr_thread.join()
 
     @final
+    def batch_inference_bestofN(
+        self,
+        test_entries: list[dict],
+        generation_gpu_ids: list[str],
+        rm_gpu_ids: list[str],
+        rm_model_name_or_path: str,
+        gpu_memory_utilization: float,
+        backend: str,
+        skip_server_setup: bool,
+        local_model_path: Optional[str],
+        include_input_log: bool,
+        exclude_state_log: bool,
+        update_mode: bool,
+        result_dir=RESULT_PATH,
+    ):
+        """
+        Batch inference for OSS models.
+        """
+        from transformers import AutoConfig, AutoTokenizer
+
+        # Determine the model source
+        if local_model_path is not None:
+            # Validate the local_model_path
+            if not os.path.isdir(local_model_path):
+                raise ValueError(
+                    f"local_model_path '{local_model_path}' does not exist or is not a directory."
+                )
+
+            required_files = ["config.json", "tokenizer_config.json"]
+            for file_name in required_files:
+                if not os.path.exists(os.path.join(local_model_path, file_name)):
+                    raise ValueError(
+                        f"Required file '{file_name}' not found in local_model_path '{local_model_path}'."
+                    )
+
+            self.model_path_or_id = local_model_path
+            load_kwargs = {
+                "pretrained_model_name_or_path": self.model_path_or_id,
+                "local_files_only": True,
+                "trust_remote_code": True,
+            }
+        else:
+            self.model_path_or_id = self.model_name_huggingface
+            load_kwargs = {
+                "pretrained_model_name_or_path": self.model_path_or_id,
+                "trust_remote_code": True,
+            }
+
+        self.tokenizer = AutoTokenizer.from_pretrained(**load_kwargs)
+        config = AutoConfig.from_pretrained(**load_kwargs)
+
+        if hasattr(config, "max_position_embeddings"):
+            self.max_context_length = config.max_position_embeddings
+        elif self.tokenizer.model_max_length is not None:
+            self.max_context_length = self.tokenizer.model_max_length
+        else:
+            if not hasattr(self, "max_context_length"):
+                raise ValueError(
+                    "Model does not have a max_position_embeddings attribute or tokenizer.model_max_length attribute. Please set the max_context_length attribute in the corresponding model handler."
+                )
+        print(f"Max context length: {self.max_context_length}")
+
+        if not skip_server_setup:
+
+            num_gpus = len(generation_gpu_ids)
+            cuda_visible_devices = ",".join(generation_gpu_ids)
+            env_copy = os.environ.copy()
+            env_copy["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+
+            if backend == "vllm":
+
+                # launch reward model server
+                rm_process, rm_stdout_thread, rm_stderr_thread = (
+                    self.reward_model_handler.launch_server(
+                        rm_gpu_ids=rm_gpu_ids,
+                        rm_model_name_or_path=rm_model_name_or_path,
+                        gpu_memory_utilization=gpu_memory_utilization,
+                    )
+                )
+
+                # launch generation server
+                process = subprocess.Popen(
+                    [
+                        "vllm",
+                        "serve",
+                        str(self.model_path_or_id),
+                        "--port",
+                        str(self.vllm_port),
+                        "--dtype",
+                        str(self.dtype),
+                        "--tensor-parallel-size",
+                        str(num_gpus),
+                        "--gpu-memory-utilization",
+                        str(gpu_memory_utilization),
+                        "--trust-remote-code",
+                    ],
+                    env=env_copy,
+                    stdout=subprocess.PIPE,  # Capture stdout
+                    stderr=subprocess.PIPE,  # Capture stderr
+                    text=True,  # To get the output as text instead of bytes
+                )
+            elif backend == "sglang":
+
+                raise NotImplementedError(
+                    "Best-of-N inference not implemented with SGLang"
+                )
+
+                process = subprocess.Popen(
+                    [
+                        "python",
+                        "-m",
+                        "sglang.launch_server",
+                        "--model-path",
+                        str(self.model_path_or_id),
+                        "--port",
+                        str(self.vllm_port),
+                        "--dtype",
+                        str(self.dtype),
+                        "--tp",
+                        str(num_gpus),
+                        "--mem-fraction-static",
+                        str(gpu_memory_utilization),
+                        "--trust-remote-code",
+                    ],
+                    stdout=subprocess.PIPE,  # Capture stdout
+                    stderr=subprocess.PIPE,  # Capture stderr
+                    text=True,  # To get the output as text instead of bytes
+                )
+            else:
+                raise ValueError(f"Backend {backend} is not supported.")
+
+            stop_event = threading.Event()
+            # Event to signal threads to stop; no need to see logs after server is ready
+
+            def log_subprocess_output(pipe, stop_event):
+                # Read lines until stop event is set
+                for line in iter(pipe.readline, ""):
+                    if stop_event.is_set():
+                        break
+                    else:
+                        print(line, end="")
+                pipe.close()
+                print("server log tracking thread stopped successfully.")
+
+            # Start threads to read and print stdout and stderr
+            stdout_thread = threading.Thread(
+                target=log_subprocess_output, args=(process.stdout, stop_event)
+            )
+            stderr_thread = threading.Thread(
+                target=log_subprocess_output, args=(process.stderr, stop_event)
+            )
+            stdout_thread.start()
+            stderr_thread.start()
+
+        try:
+            # Wait for the server to be ready
+            server_ready = False
+            while not server_ready:
+                # Check if the process has terminated unexpectedly
+                if not skip_server_setup and process.poll() is not None:
+                    # Output the captured logs
+                    stdout, stderr = process.communicate()
+                    print(stdout)
+                    print(stderr)
+                    raise Exception(
+                        f"Subprocess terminated unexpectedly with code {process.returncode}"
+                    )
+                try:
+                    # Make a simple request to check if the server is up
+                    response = requests.get(f"{self.base_url}/models")
+                    if response.status_code == 200:
+                        server_ready = True
+                        print("server is ready!")
+                except requests.exceptions.ConnectionError:
+                    # If the connection is not ready, wait and try again
+                    time.sleep(1)
+
+            if not skip_server_setup:
+                # Signal threads to stop reading output
+                stop_event.set()
+
+            # Once the server is ready, make the completion requests
+            # We reduce the max_workers from 100 to 10. This is because BoN requires
+            # more time to generate from the model resulting in request timeouts
+            futures = []
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                with tqdm(
+                    total=len(test_entries),
+                    desc=f"Generating results for {self.model_name}",
+                ) as pbar:
+
+                    for test_case in test_entries:
+                        future = executor.submit(
+                            self._multi_threaded_inference,
+                            test_case,
+                            include_input_log,
+                            exclude_state_log,
+                        )
+                        futures.append(future)
+
+                    for future in futures:
+                        # This will wait for the task to complete, so that we are always writing in order
+                        result = future.result()
+                        self.write(result, result_dir, update_mode=update_mode)
+                        pbar.update()
+
+        except Exception as e:
+            raise e
+
+        finally:
+            if not skip_server_setup:
+                # Ensure the server process is terminated properly
+                rm_process.terminate()
+                process.terminate()
+
+                try:
+                    rm_process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    rm_process.kill()
+                    rm_process.wait()
+                    print("RM Process killed")
+
+                try:
+                    # Wait for the process to terminate fully
+                    process.wait(timeout=15)
+                    print("Process terminated successfully.")
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()  # Wait again to ensure it's fully terminated
+                    print("Process killed.")
+
+                # Wait for the output threads to finish
+                stop_event.set()
+                stdout_thread.join()
+                stderr_thread.join()
+
+                # Wait for RM Output threads to finish
+                rm_stderr_thread.join()
+                rm_stdout_thread.join()
+
+    @final
     def _multi_threaded_inference(
         self, test_case, include_input_log: bool, exclude_state_log: bool
     ):
@@ -344,6 +598,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         if len(extra_body) > 0:
             api_response = self.client.completions.create(
                 model=self.model_path_or_id,
+                n=self.num_generations,
                 temperature=self.temperature,
                 prompt=formatted_prompt,
                 max_tokens=leftover_tokens_count,
@@ -353,6 +608,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         else:
             api_response = self.client.completions.create(
                 model=self.model_path_or_id,
+                n=self.num_generations,
                 temperature=self.temperature,
                 prompt=formatted_prompt,
                 max_tokens=leftover_tokens_count,
@@ -377,11 +633,48 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
     @override
     def _parse_query_response_prompting(self, api_response: any) -> dict:
+
         return {
             "model_responses": api_response.choices[0].text,
             "input_token": api_response.usage.prompt_tokens,
             "output_token": api_response.usage.completion_tokens,
+            "best_of_n_responses": {
+                "model_responses": [choice.text for choice in api_response.choices]
+            },
         }
+
+        # return {
+        #     "model_responses": api_response.choices[0].text,
+        #     "input_token": api_response.usage.prompt_tokens,
+        #     "output_token": api_response.usage.completion_tokens,
+        # }
+
+    @override
+    def _rank_generations_(self, api_response: any, inference_data: dict):
+
+        functions: list[dict] = inference_data["function"]
+        conversation: list[dict] = inference_data["message"]
+
+        generated_tool_calls: list[list[dict]] = []
+        for choice in api_response.choices:
+            try:
+                # TODO: Is decode_ast sufficient or we need to execute decode_execute too?
+                decoded_generation = self.decode_ast(choice.text)
+            except Exception as err:
+                decoded_generation = []
+            finally:
+                generated_tool_calls.append(decoded_generation)
+
+        sort_idxs, rm_scores = self.reward_model_handler.rank_generations(
+            functions=functions,
+            conversations=conversation,
+            generated_tool_calls=generated_tool_calls,
+        )
+
+        api_response.choices = [api_response.choices[i] for i in sort_idxs]
+        rm_scores_sorted = [rm_scores[i] for i in sort_idxs]
+
+        return api_response, rm_scores_sorted
 
     @override
     def add_first_turn_message_prompting(
@@ -408,7 +701,10 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
     @override
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         for execution_result, decoded_model_response in zip(
             execution_results, model_response_data["model_responses_decoded"]

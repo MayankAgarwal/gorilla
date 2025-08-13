@@ -17,8 +17,8 @@ class PhiFCHandler(OSSHandler):
     - microsoft/Phi-4-mini-instruct
     """
 
-    def __init__(self, model_name, temperature) -> None:
-        super().__init__(model_name, temperature)
+    def __init__(self, model_name, temperature, num_generations=1) -> None:
+        super().__init__(model_name, temperature, num_generations=num_generations)
         self.model_name_huggingface = model_name.replace("-FC", "")
         self.is_fc_model = True
 
@@ -150,7 +150,9 @@ class PhiFCHandler(OSSHandler):
         inference_data["message"].append(
             {
                 "role": "assistant",
-                "content": model_response_data["model_responses_message_for_chat_history"],
+                "content": model_response_data[
+                    "model_responses_message_for_chat_history"
+                ],
             }
         )
         return inference_data
