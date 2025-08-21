@@ -462,7 +462,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
             # We reduce the max_workers from 100 to 10. This is because BoN requires
             # more time to generate from the model resulting in request timeouts
             futures = []
-            with ThreadPoolExecutor(max_workers=25) as executor:
+            with ThreadPoolExecutor(max_workers=10) as executor:
                 with tqdm(
                     total=len(test_entries),
                     desc=f"Generating results for {self.model_name}",
