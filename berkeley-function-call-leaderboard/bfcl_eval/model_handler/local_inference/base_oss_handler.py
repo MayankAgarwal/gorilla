@@ -1,10 +1,12 @@
 import os
+import json
 import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 import traceback
+from copy import deepcopy
 
 import requests
 from bfcl_eval.constants.eval_config import RESULT_PATH, VLLM_PORT
@@ -460,7 +462,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
             # We reduce the max_workers from 100 to 10. This is because BoN requires
             # more time to generate from the model resulting in request timeouts
             futures = []
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(max_workers=25) as executor:
                 with tqdm(
                     total=len(test_entries),
                     desc=f"Generating results for {self.model_name}",
@@ -639,20 +641,101 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         else:
             model_responses = api_response.choices[0].text
 
+        input_tokens, output_tokens = self.safely_get_input_output_tokens(
+            api_response=api_response
+        )
+
         return {
             "model_responses": model_responses,
-            "input_token": api_response.usage.prompt_tokens,
-            "output_token": api_response.usage.completion_tokens,
+            "input_token": input_tokens,
+            "output_token": output_tokens,
             "best_of_n_responses": {
                 "model_responses": [choice.text for choice in api_response.choices]
             },
         }
 
+    def serialize_tool_calls(self, tool_call) -> str:
+        if len(tool_call) == 0:
+            tool_call_str = "<tool_call>\n[]\n</tool_call>"
+        elif isinstance(tool_call, str):
+            tool_call_str = "<tool_call>\n[\n\t" + tool_call + "\n]\n</tool_call>"
+        elif isinstance(tool_call, list):
+            tool_call_str = ""
+            for idx, fn in enumerate(tool_call):
+                tool_call_str += "\n\t" + json.dumps(fn)
+                if idx < len(tool_call) - 1:
+                    tool_call_str += ","
+            tool_call_str = "<tool_call>\n[" + tool_call_str + "\n]\n</tool_call>"
+        elif isinstance(tool_call, dict):
+            tool_call_str = (
+                "<tool_call>\n[\n\t" + json.dumps(tool_call) + "\n]\n</tool_call>"
+            )
+
+        return tool_call_str
+
+    def fix_toolcall_format(self, tool_calls: list[dict]) -> list[dict]:
+        tool_calls_fixed = []
+
+        for tool_call in tool_calls:
+            fnname = list(tool_call.keys())[0]
+            fnargs = tool_call[fnname]
+            tool_calls_fixed.append({"name": fnname, "arguments": fnargs})
+
+        return tool_calls_fixed
+
+    def merge_tool_response_messages(self, conversations: list[dict]) -> list[dict]:
+        conversations_merged = []
+        cidx = 0
+
+        while cidx < len(conversations):
+            turn = conversations[cidx]
+
+            if turn["role"] != "tool":
+                conversations_merged.append(turn)
+                cidx += 1
+                continue
+
+            # Check if next conversation messages are also from tool.
+            # If so, merge them
+            eidx = cidx + 1
+            while eidx < len(conversations) and conversations[eidx]["role"] == "tool":
+                eidx += 1
+
+            contiguous_tool_messages = [x["content"] for x in conversations[cidx:eidx]]
+            conversations_merged.append(
+                {"role": "tool", "content": json.dumps(contiguous_tool_messages)}
+            )
+            cidx = eidx
+
+        return conversations_merged
+
     @override
-    def _rank_generations_(self, api_response: any, inference_data: dict):
+    def _rank_generations_(
+        self, api_response: any, inference_data: dict, decode_fn=None
+    ):
 
         functions: list[dict] = inference_data["function"]
-        conversation: list[dict] = inference_data["message"]
+        conversation: list[dict] = deepcopy(inference_data["message"])
+        conversation = self.merge_tool_response_messages(conversations=conversation)
+
+        if decode_fn is not None:
+            for turn in conversation:
+                if turn["role"] != "assistant":
+                    continue
+
+                try:
+                    model_response_decoded = decode_fn(turn["content"])
+                    model_response_decoded = self.fix_toolcall_format(
+                        model_response_decoded
+                    )
+                    model_response_decoded = self.serialize_tool_calls(
+                        model_response_decoded
+                    )
+                except:
+                    # If failed to decode, keep to whatever the model generated
+                    model_response_decoded = turn["content"]
+                finally:
+                    turn["content"] = model_response_decoded
 
         generated_tool_calls: list[list[dict]] = []
         for choice in api_response.choices:
@@ -663,6 +746,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
                 # TODO: Is decode_ast sufficient or we need to execute decode_execute too?
                 decoded_generation = self.decode_ast(response)
+                decoded_generation = self.fix_toolcall_format(decoded_generation)
             except Exception as err:
                 decoded_generation = []
             finally:
@@ -695,11 +779,14 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
     @override
     def _add_assistant_message_prompting(
-        self, inference_data: dict, model_response_data: dict
+        self,
+        inference_data: dict,
+        model_response_data: dict,
     ) -> dict:
         inference_data["message"].append(
             {"role": "assistant", "content": model_response_data["model_responses"]}
         )
+
         return inference_data
 
     @override
@@ -721,3 +808,17 @@ class OSSHandler(BaseHandler, EnforceOverrides):
             )
 
         return inference_data
+
+    def safely_get_input_output_tokens(self, api_response: any) -> tuple[int, int]:
+
+        try:
+            input_tokens = api_response.usage.prompt_tokens
+        except:
+            input_tokens = -1
+
+        try:
+            output_tokens = api_response.usage.completion_tokens
+        except:
+            output_tokens = -1
+
+        return input_tokens, output_tokens

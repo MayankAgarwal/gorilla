@@ -283,12 +283,16 @@ class QwenFCHandler(OSSHandler):
             reasoning_content
         )
 
+        input_tokens, output_tokens = self.safely_get_input_output_tokens(
+            api_response=api_response
+        )
+
         return {
             "model_responses": cleaned_response,
             "reasoning_content": reasoning_content,
             "model_responses_message_for_chat_history": model_responses_message_for_chat_history,
-            "input_token": api_response.usage.prompt_tokens,
-            "output_token": api_response.usage.completion_tokens,
+            "input_token": input_tokens,
+            "output_token": output_tokens,
         }
 
     @override

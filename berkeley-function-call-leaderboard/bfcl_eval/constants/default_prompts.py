@@ -1,4 +1,4 @@
-MAXIMUM_STEP_LIMIT = 20
+MAXIMUM_STEP_LIMIT = 3
 
 DEFAULT_SYSTEM_PROMPT_WITHOUT_FUNC_DOC = """You are an expert in composing functions. You are given a question and a set of possible functions. Based on the question, you will need to make one or more function/tool calls to achieve the purpose.
 If none of the functions can be used, point it out. If the given question lacks the parameters required by the function, also point it out.
@@ -17,6 +17,10 @@ Here is a list of functions in JSON format that you can invoke.\n{functions}\n
 """
 )
 
-DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_FC = "I have updated some more functions you can choose from. What about now?"
+DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_FC = (
+    "I have updated some more functions you can choose from. What about now?"
+)
 
-DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_PROMPTING = "{functions}\n" + DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_FC
+DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_PROMPTING = (
+    "{functions}\n" + DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_FC
+)

@@ -170,7 +170,9 @@ class BaseHandler:
 
                 # Rank generations using a Reward Model
                 api_response, rm_scores_sorted = self._rank_generations_(
-                    api_response=api_response, inference_data=inference_data
+                    api_response=api_response,
+                    inference_data=inference_data,
+                    decode_fn=self.decode_ast,
                 )
 
                 # This part of logging is disabled by default because it is too verbose and will make the result file extremely large
@@ -356,6 +358,8 @@ class BaseHandler:
         # The debugging log for human to understand
         all_inference_log: list[list[dict]] = []
         force_quit = False  # Whether the model has been forced to quit. If True, this whole entry will be failed.
+        all_rm_scores: list[list[list[float]]] = []
+        all_model_responses = []
 
         # Execute no function call, but just to get a reference to all the instances to get the initial state for logging purpose
         if not exclude_state_log:
@@ -425,6 +429,8 @@ class BaseHandler:
             current_turn_input_token_count: list[float] = []
             current_turn_output_token_count: list[float] = []
             current_turn_latency: list[float] = []
+            current_turn_rm_scores: list[list[float]] = []
+            current_turn_all_responses: list[str] = []
 
             count = 0
             while True:
@@ -440,7 +446,9 @@ class BaseHandler:
 
                 # Rank generations using a Reward Model
                 api_response, rm_scores_sorted = self._rank_generations_(
-                    api_response=api_response, inference_data=inference_data
+                    api_response=api_response,
+                    inference_data=inference_data,
+                    decode_fn=self.decode_ast,
                 )
 
                 # This part of logging is disabled by default because it is too verbose and will make the result file extremely large
@@ -459,7 +467,8 @@ class BaseHandler:
 
                 # Add the assistant message to the chat history
                 inference_data = self._add_assistant_message_prompting(
-                    inference_data, model_response_data
+                    inference_data,
+                    model_response_data,
                 )
 
                 # Process the metadata
@@ -474,6 +483,10 @@ class BaseHandler:
                 current_turn_response.append(model_responses)
                 reasoning_content = model_response_data.get("reasoning_content", "")
                 current_turn_reasoning_content.append(reasoning_content)
+                current_turn_rm_scores.append(rm_scores_sorted)
+                current_turn_all_responses.append(
+                    [choice.text for choice in api_response.choices]
+                )
 
                 log_entry = {
                     "role": "assistant",
@@ -565,6 +578,8 @@ class BaseHandler:
             total_input_token_count.append(current_turn_input_token_count)
             total_output_token_count.append(current_turn_output_token_count)
             total_latency.append(current_turn_latency)
+            all_rm_scores.append(current_turn_rm_scores)
+            all_model_responses.append(current_turn_all_responses)
 
             if not exclude_state_log:
                 state_log = []
@@ -594,6 +609,8 @@ class BaseHandler:
             "output_token_count": total_output_token_count,
             "latency": total_latency,
             "inference_log": all_inference_log,
+            "rm_scores": all_rm_scores,
+            "all_model_responses": all_model_responses,
         }
         # We only include reasoning content if it exists and is not empty
         if not all(
@@ -877,7 +894,9 @@ class BaseHandler:
         """
         raise NotImplementedError
 
-    def _rank_generations_(self, api_response: any, inference_data: dict):
+    def _rank_generations_(
+        self, api_response: any, inference_data: dict, decode_fn=None
+    ):
         raise NotADirectoryError
 
     def add_first_turn_message_prompting(

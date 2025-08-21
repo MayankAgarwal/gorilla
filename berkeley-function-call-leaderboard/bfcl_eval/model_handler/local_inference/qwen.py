@@ -190,11 +190,15 @@ class QwenHandler(OSSHandler):
             reasoning_content = parts[0].rstrip("\n").split("<think>")[-1].lstrip("\n")
             cleaned_response = parts[-1].lstrip("\n")
 
+        input_tokens, output_tokens = self.safely_get_input_output_tokens(
+            api_response=api_response
+        )
+
         return {
             "model_responses": cleaned_response,
             "reasoning_content": reasoning_content,
-            "input_token": api_response.usage.prompt_tokens,
-            "output_token": api_response.usage.completion_tokens,
+            "input_token": input_tokens,
+            "output_token": output_tokens,
         }
 
     @override
