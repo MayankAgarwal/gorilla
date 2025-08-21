@@ -143,6 +143,11 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
         if not skip_server_setup:
             if backend == "vllm":
+                env_copy = None
+                if num_gpus > 1:
+                    env_copy = os.environ.copy()
+                    env_copy["VLLM_SKIP_P2P_CHECK"] = "1"
+
                 process = subprocess.Popen(
                     [
                         "vllm",
@@ -161,6 +166,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
                     stdout=subprocess.PIPE,  # Capture stdout
                     stderr=subprocess.PIPE,  # Capture stderr
                     text=True,  # To get the output as text instead of bytes
+                    env=env_copy,
                 )
             elif backend == "sglang":
 
@@ -351,6 +357,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
             cuda_visible_devices = ",".join(generation_gpu_ids)
             env_copy = os.environ.copy()
             env_copy["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+            env_copy["VLLM_SKIP_P2P_CHECK"] = "1"
 
             if backend == "vllm":
 
