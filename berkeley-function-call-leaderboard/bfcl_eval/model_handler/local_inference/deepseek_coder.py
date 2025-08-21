@@ -142,7 +142,14 @@ class DeepseekCoderHandler(OSSHandler):
 
     @override
     def _parse_query_response_prompting(self, api_response: any) -> dict:
-        model_responses = api_response.choices[0].text
+
+        if isinstance(api_response, str):
+            # For Best-of-N sampling we pass api_response as string instead
+            # of an object
+            model_responses = api_response
+        else:
+            model_responses = api_response.choices[0].text
+
         extracted_tool_calls = self.extract_tool_calls(model_responses)
 
         if len(extracted_tool_calls) > 0:
