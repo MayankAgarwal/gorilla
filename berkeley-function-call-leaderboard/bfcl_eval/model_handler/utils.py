@@ -4,6 +4,7 @@ import copy
 import json
 import operator
 import re
+import socket
 from functools import reduce
 from typing import Callable, List, Optional, Type, Union
 
@@ -47,7 +48,9 @@ def _cast_to_openai_type(properties, mapping):
                     properties[key]["properties"], mapping
                 )
             elif "items" in properties[key]:
-                properties[key]["items"]["type"] = mapping[properties[key]["items"]["type"]]
+                properties[key]["items"]["type"] = mapping[
+                    properties[key]["items"]["type"]
+                ]
                 if (
                     properties[key]["items"]["type"] == "array"
                     and "items" in properties[key]["items"]
@@ -121,7 +124,9 @@ def convert_to_tool(functions, mapping, model_style):
                     del params["required"]
                 # No `maximum` field.
                 if "maximum" in params:
-                    params["description"] += f" Maximum value: {str(params['maximum'])}."
+                    params[
+                        "description"
+                    ] += f" Maximum value: {str(params['maximum'])}."
                     del params["maximum"]
                 # No `minItems` field.
                 if "minItems" in params:
@@ -175,13 +180,15 @@ def convert_to_tool(functions, mapping, model_style):
             ModelStyle.OSSMODEL,
         ]:
             oai_tool.append(item)
-        elif model_style in [
-            ModelStyle.OpenAI_Responses
-        ]:
-            oai_tool.append({"type": "function", 
-                             "name": item["name"], 
-                             "description": item["description"], 
-                             "parameters": item["parameters"]})
+        elif model_style in [ModelStyle.OpenAI_Responses]:
+            oai_tool.append(
+                {
+                    "type": "function",
+                    "name": item["name"],
+                    "description": item["description"],
+                    "parameters": item["parameters"],
+                }
+            )
         elif model_style in [
             ModelStyle.COHERE,
             ModelStyle.OpenAI_Completions,
@@ -238,7 +245,7 @@ def convert_value(value, type_str):
         return value
 
 
-def ast_parse(input_str: str, language: str="Python") -> list[dict]:
+def ast_parse(input_str: str, language: str = "Python") -> list[dict]:
     if language == "Python":
         cleaned_input = input_str.strip("[]'")
         parsed = ast.parse(cleaned_input, mode="eval")
@@ -530,7 +537,9 @@ def _function_calls_valid_format_and_invoke_extraction(last_completion):
         return {"status": True, "invokes": []}
 
     # Extract content between <function_calls> tags. If there are multiple we will only parse the first and ignore the rest, regardless of their correctness.
-    match = re.search(r"<function_calls>(.*)</function_calls>", last_completion, re.DOTALL)
+    match = re.search(
+        r"<function_calls>(.*)</function_calls>", last_completion, re.DOTALL
+    )
     if not match:
         return {
             "status": False,
@@ -567,7 +576,9 @@ def _function_calls_valid_format_and_invoke_extraction(last_completion):
                 "reason": "More than one tool_name specified inside single set of <invoke></invoke> tags.",
             }
 
-        parameters = re.findall(r"<parameters>.*?</parameters>", invoke_string, re.DOTALL)
+        parameters = re.findall(
+            r"<parameters>.*?</parameters>", invoke_string, re.DOTALL
+        )
         if not parameters:
             return {
                 "status": False,
@@ -665,7 +676,9 @@ def extract_system_prompt(prompts: list[dict]) -> str:
     return None
 
 
-def extract_last_user_message(prompts: list[dict], user_role_name: str = "user") -> dict:
+def extract_last_user_message(
+    prompts: list[dict], user_role_name: str = "user"
+) -> dict:
     for i in range(len(prompts) - 1, -1, -1):
         if prompts[i]["role"] == user_role_name:
             last_user_message = prompts[i]
@@ -686,13 +699,17 @@ def format_execution_results_prompting(
         execution_results, model_response_data["model_responses_decoded"]
     ):
         tool_results.append(
-            {"role": "tool", "name": decoded_model_response, "content": execution_result}
+            {
+                "role": "tool",
+                "name": decoded_model_response,
+                "content": execution_result,
+            }
         )
 
     return repr(tool_results)
 
 
-def default_decode_ast_prompting(result: str, language: str="Python") -> list[dict]:
+def default_decode_ast_prompting(result: str, language: str = "Python") -> list[dict]:
     result = result.strip("`\n ")
     if not result.startswith("["):
         result = "[" + result
@@ -727,7 +744,9 @@ def parse_nested_value(value):
         if all(isinstance(v, dict) for v in value.values()):
             func_name = list(value.keys())[0]
             args = value[func_name]
-            args_str = ", ".join(f"{k}={parse_nested_value(v)}" for k, v in args.items())
+            args_str = ", ".join(
+                f"{k}={parse_nested_value(v)}" for k, v in args.items()
+            )
             return f"{func_name}({args_str})"
         else:
             # If it's a simple dictionary, treat it as key-value pairs
@@ -752,7 +771,9 @@ def decoded_output_to_execution_list(decoded_output: list[dict]) -> list[str]:
     execution_list = []
     for function_call in decoded_output:
         for key, value in function_call.items():
-            args_str = ", ".join(f"{k}={parse_nested_value(v)}" for k, v in value.items())
+            args_str = ", ".join(
+                f"{k}={parse_nested_value(v)}" for k, v in value.items()
+            )
             execution_list.append(f"{key}({args_str})")
     return execution_list
 
@@ -819,3 +840,22 @@ def retry_with_backoff(
         return wrapped
 
     return decorator
+
+
+def get_empty_port(avoid_ports=None):
+    """
+    Finds and returns an available local port
+    """
+
+    def _get_port_():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("localhost", 0))  # Bind to port 0 to let the OS assign a free port
+            return s.getsockname()[1]
+
+    avoid_ports = set() if avoid_ports is None else avoid_ports
+
+    open_port = _get_port_()
+    while open_port in avoid_ports:
+        open_port = _get_port_()
+
+    return open_port

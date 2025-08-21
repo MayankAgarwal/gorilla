@@ -18,6 +18,7 @@ from bfcl_eval.model_handler.utils import (
     default_decode_execute_prompting,
     func_doc_language_specific_pre_processing,
     system_prompt_pre_processing_chat_model,
+    get_empty_port,
 )
 from openai import OpenAI
 from overrides import EnforceOverrides, final, override
@@ -39,13 +40,18 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
         # Read from env vars with fallbacks
         self.vllm_host = os.getenv("VLLM_ENDPOINT", "localhost")
-        self.vllm_port = os.getenv("VLLM_PORT", VLLM_PORT)
+        # self.vllm_port = os.getenv("VLLM_PORT", VLLM_PORT)
+        self.vllm_port = os.getenv("VLLM_PORT", get_empty_port())
 
         self.base_url = f"http://{self.vllm_host}:{self.vllm_port}/v1"
         self.client = OpenAI(base_url=self.base_url, api_key="EMPTY")
 
         # Reward model server specific variables
-        self.vllm_rm_port = str(int(self.vllm_port) + 1)
+        # self.vllm_rm_port = str(int(self.vllm_port) + 1)
+        self.vllm_rm_port = str(get_empty_port(avoid_ports={self.vllm_port}))
+        print(f"vLLM url: {self.base_url}")
+        print(f"vLLM RM port: {self.vllm_rm_port}")
+
         self.reward_model_handler = RewardModelHandler(
             vllm_rm_host=self.vllm_host,
             vllm_rm_port=self.vllm_rm_port,
