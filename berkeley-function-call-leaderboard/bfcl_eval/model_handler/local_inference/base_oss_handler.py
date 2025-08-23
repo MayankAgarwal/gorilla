@@ -40,7 +40,9 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         self.client = OpenAI(base_url=self.base_url, api_key="EMPTY")
 
     @override
-    def inference(self, test_entry: dict, include_input_log: bool, exclude_state_log: bool):
+    def inference(
+        self, test_entry: dict, include_input_log: bool, exclude_state_log: bool
+    ):
         """
         OSS models have a different inference method.
         They needs to spin up a server first and then send requests to it.
@@ -122,6 +124,12 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
         if not skip_server_setup:
             if backend == "vllm":
+
+                env_copy = None
+                if num_gpus > 1:
+                    env_copy = os.environ.copy()
+                    env_copy["VLLM_SKIP_P2P_CHECK"] = "1"
+
                 process = subprocess.Popen(
                     [
                         "vllm",
@@ -140,6 +148,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
                     stdout=subprocess.PIPE,  # Capture stdout
                     stderr=subprocess.PIPE,  # Capture stderr
                     text=True,  # To get the output as text instead of bytes
+                    env=env_copy,
                 )
             elif backend == "sglang":
 
@@ -408,7 +417,10 @@ class OSSHandler(BaseHandler, EnforceOverrides):
 
     @override
     def _add_execution_results_prompting(
-        self, inference_data: dict, execution_results: list[str], model_response_data: dict
+        self,
+        inference_data: dict,
+        execution_results: list[str],
+        model_response_data: dict,
     ) -> dict:
         for execution_result, decoded_model_response in zip(
             execution_results, model_response_data["model_responses_decoded"]
