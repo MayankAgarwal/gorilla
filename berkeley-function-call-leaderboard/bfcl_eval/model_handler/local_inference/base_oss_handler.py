@@ -9,6 +9,8 @@ import traceback
 from copy import deepcopy
 
 import requests
+import torch
+
 from bfcl_eval.constants.eval_config import RESULT_PATH, VLLM_PORT
 from bfcl_eval.model_handler.base_handler import BaseHandler
 from bfcl_eval.model_handler.reward_model_handler import RewardModelHandler
@@ -20,6 +22,10 @@ from bfcl_eval.model_handler.utils import (
     system_prompt_pre_processing_chat_model,
     get_empty_port,
 )
+from bfcl_eval.constants.default_prompts import (
+    DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_FC,
+)
+
 from openai import OpenAI
 from overrides import EnforceOverrides, final, override
 from tqdm import tqdm
@@ -49,8 +55,6 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         # Reward model server specific variables
         # self.vllm_rm_port = str(int(self.vllm_port) + 1)
         self.vllm_rm_port = str(get_empty_port(avoid_ports={self.vllm_port}))
-        print(f"vLLM url: {self.base_url}")
-        print(f"vLLM RM port: {self.vllm_rm_port}")
 
         self.reward_model_handler = RewardModelHandler(
             vllm_rm_host=self.vllm_host,
@@ -714,13 +718,29 @@ class OSSHandler(BaseHandler, EnforceOverrides):
             while eidx < len(conversations) and conversations[eidx]["role"] == "tool":
                 eidx += 1
 
-            contiguous_tool_messages = [x["content"] for x in conversations[cidx:eidx]]
+            # contiguous_tool_messages = [x["content"] for x in conversations[cidx:eidx]]
+            contiguous_tool_messages = []
+            for x in conversations[cidx:eidx]:
+                try:
+                    if x["content"] == "None":
+                        content = None
+                    else:
+                        content = json.loads(x["content"])
+                except:
+                    content = x["content"]
+                finally:
+                    contiguous_tool_messages.append(content)
+
             conversations_merged.append(
                 {"role": "tool", "content": json.dumps(contiguous_tool_messages)}
             )
             cidx = eidx
 
         return conversations_merged
+
+    def add_to_fns_called(self, fns: list[dict], called_fn_names: set[str]) -> None:
+        for fn in fns:
+            called_fn_names.add(fn["name"])
 
     @override
     def _rank_generations_(
@@ -730,9 +750,44 @@ class OSSHandler(BaseHandler, EnforceOverrides):
         functions: list[dict] = inference_data["function"]
         conversation: list[dict] = deepcopy(inference_data["message"])
         conversation = self.merge_tool_response_messages(conversations=conversation)
+        called_fn_names = set()
+        is_multi_turn = "assistant" in [turn["role"] for turn in conversation]
 
         if decode_fn is not None:
             for turn in conversation:
+
+                if (
+                    turn["role"] == "user"
+                    and DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_FC
+                    in turn["content"]
+                ):
+                    # New function added for multi-turn-missing-func category. Try to parse and add to catalog
+
+                    content = (
+                        turn["content"]
+                        .replace(DEFAULT_USER_PROMPT_FOR_ADDITIONAL_FUNCTION_FC, "")
+                        .strip()
+                    )
+                    content_json = None
+
+                    try:
+                        content_json = json.loads(content)
+                    except:
+                        try:
+                            content_json = eval(content)
+                        except:
+                            pass
+
+                    if content_json is None:
+                        continue
+
+                    if isinstance(content_json, list):
+                        functions.extend(content_json)
+                    elif isinstance(content_json, dict):
+                        functions.append(content_json)
+
+                    continue
+
                 if turn["role"] != "assistant":
                     continue
 
@@ -741,10 +796,13 @@ class OSSHandler(BaseHandler, EnforceOverrides):
                     model_response_decoded = self.fix_toolcall_format(
                         model_response_decoded
                     )
+
+                    self.add_to_fns_called(model_response_decoded, called_fn_names)
+
                     model_response_decoded = self.serialize_tool_calls(
                         model_response_decoded
                     )
-                except:
+                except Exception as err:
                     # If failed to decode, keep to whatever the model generated
                     model_response_decoded = turn["content"]
                 finally:
@@ -760,19 +818,42 @@ class OSSHandler(BaseHandler, EnforceOverrides):
                 # TODO: Is decode_ast sufficient or we need to execute decode_execute too?
                 decoded_generation = self.decode_ast(response)
                 decoded_generation = self.fix_toolcall_format(decoded_generation)
+                self.add_to_fns_called(decoded_generation, called_fn_names)
             except Exception as err:
                 decoded_generation = []
             finally:
+                decoded_generation = self.serialize_tool_calls(decoded_generation)
                 generated_tool_calls.append(decoded_generation)
 
+        if called_fn_names:
+            functions_trimmed = [
+                fn for fn in functions if fn["name"] in called_fn_names
+            ]
+        else:
+            functions_trimmed = functions
+
         sort_idxs, rm_scores = self.reward_model_handler.rank_generations(
-            functions=functions,
+            functions=functions_trimmed,
             conversations=conversation,
             generated_tool_calls=generated_tool_calls,
         )
 
-        api_response.choices = [api_response.choices[i] for i in sort_idxs]
-        rm_scores_sorted = [rm_scores[i] for i in sort_idxs]
+        if is_multi_turn:
+            # Do sampling based on RM scores if multi-turn
+            rm_scores_probs = torch.nn.functional.softmax(torch.tensor(rm_scores))
+            sampled_idx = torch.multinomial(rm_scores_probs, num_samples=1).item()
+
+            api_response.choices = [api_response.choices[sampled_idx]] + [
+                x for i, x in enumerate(api_response.choices) if i != sampled_idx
+            ]
+
+            rm_scores_sorted = [rm_scores[sampled_idx]] + [
+                x for i, x in enumerate(rm_scores) if i != sampled_idx
+            ]
+        else:
+            # Do argmax selection if not multi-turn
+            api_response.choices = [api_response.choices[i] for i in sort_idxs]
+            rm_scores_sorted = [rm_scores[i] for i in sort_idxs]
 
         return api_response, rm_scores_sorted
 

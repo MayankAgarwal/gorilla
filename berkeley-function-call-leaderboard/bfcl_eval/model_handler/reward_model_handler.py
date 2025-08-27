@@ -175,12 +175,7 @@ class RewardModelHandler:
             rm_conversation = (
                 [{"role": "system", "content": system_prompt}]
                 + conversations
-                + [
-                    {
-                        "role": "assistant",
-                        "content": self.__format_json__(tool_call_generation),
-                    }
-                ]
+                + [{"role": "assistant", "content": tool_call_generation}]
             )
 
             rm_prompts.append(
