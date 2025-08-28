@@ -666,9 +666,11 @@ class OSSHandler(BaseHandler, EnforceOverrides):
             "model_responses": model_responses,
             "input_token": input_tokens,
             "output_token": output_tokens,
-            "best_of_n_responses": {
-                "model_responses": [choice.text for choice in api_response.choices]
-            },
+            "best_of_n_responses": (
+                [choice.text for choice in api_response.choices]
+                if not isinstance(api_response, str)
+                else [api_response]
+            ),
         }
 
     def serialize_tool_calls(self, tool_call) -> str:
@@ -820,6 +822,7 @@ class OSSHandler(BaseHandler, EnforceOverrides):
                 decoded_generation = self.fix_toolcall_format(decoded_generation)
                 self.add_to_fns_called(decoded_generation, called_fn_names)
             except Exception as err:
+                # print(f"Exception in ranking generation: {err}")
                 decoded_generation = []
             finally:
                 decoded_generation = self.serialize_tool_calls(decoded_generation)
